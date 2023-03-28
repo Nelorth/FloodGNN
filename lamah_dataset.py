@@ -46,7 +46,6 @@ class LamaHDataset(Dataset):
         self.mean = torch.tensor(statistics["mean"].values, dtype=torch.float)
         self.std = torch.tensor(statistics["std"].values, dtype=torch.float)
 
-
         self.year_tensors = [[] for _ in years]
         print("Loading dataset into memory...")
         for gauge_id in tqdm(gauges):
@@ -142,10 +141,10 @@ class LamaHDataset(Dataset):
         y = year_tensor[:, offset + self.window_size_hrs + (self.lead_time_hrs - 1)]
         return Data(x=x, y=y.unsqueeze(-1), edge_index=self.edge_index, edge_attr=self.edge_attr)
 
-    def mean(self):
+    def get_mean(self):
         return self.mean
 
-    def std(self):
+    def get_std(self):
         return self.std
 
     def subsample_years(self, years):
