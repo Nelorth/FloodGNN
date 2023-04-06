@@ -8,13 +8,13 @@ from torch_geometric.nn import GCNConv
 class LossAppender(nn.Module):
     def __init__(self):
         super().__init__()
-        
+
     def forward(self, x, y):
         if y is not None:
             return x, F.mse_loss(x, y)
         return x
 
-    
+
 class MLP(LossAppender):
     def __init__(self, window_size_hrs, num_hidden, hidden_size, residual):
         super().__init__()
@@ -31,7 +31,7 @@ class MLP(LossAppender):
         x = self.layers[-1](x)
 
         return super().forward(x, y)
-    
+
 
 class WeightedGCN(LossAppender):
     def __init__(self, window_size_hrs, num_convs, hidden_size, residual, edge_weights):
