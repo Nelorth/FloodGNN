@@ -5,6 +5,7 @@ import torch
 import urllib.request
 
 from torch_geometric.data import Data, Dataset
+from torch_geometric.utils import add_self_loops, to_undirected
 from tqdm import tqdm
 
 
@@ -38,9 +39,9 @@ class LamaHDataset(Dataset):
         self.edge_index = torch.tensor(edge_cols.values.transpose(), dtype=torch.long)
         weight_cols = adjacency[["dist_hdn", "elev_diff", "strm_slope"]]
         self.edge_attr = torch.tensor(weight_cols.values, dtype=torch.float)
+        self.edge_index, self.edge_attr = add_self_loops(self.edge_index, self.edge_attr, fill_value="mean")
         if bidirectional:
-            self.edge_index = torch.cat((self.edge_index, self.edge_index[(1, 0), :]), dim=1)
-            self.edge_attr = self.edge_attr.repeat(2, 1)
+            self.edge_index, self.edge_attr = to_undirected(self.edge_index, self.edge_attr, reduce="mean")
 
         statistics = pd.read_csv(self.processed_paths[1], index_col="ID")
         self.mean = torch.tensor(statistics["mean"].values, dtype=torch.float)
