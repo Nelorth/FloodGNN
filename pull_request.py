@@ -1,6 +1,3 @@
-from typing import Any, Callable, Dict, Optional, Union
-
-import torch
 from torch import Tensor
 from torch.nn import Module, ModuleList
 from torch.nn.utils.parametrize import register_parametrization
@@ -11,14 +8,16 @@ from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.nn.resolver import activation_resolver
 from torch_geometric.typing import Adj, OptPairTensor, OptTensor, SparseTensor
 from torch_geometric.utils import spmm
+from typing import Any, Callable, Dict, Optional, Union
 
 
 class SymmetricLinear(Linear):
     """
     only for square matrices, i.e., in_channels == out_channels
     """
+
     class Symmetrizer(Module):
-        def forward(self, x: Tensor):
+        def forward(self, x: Tensor) -> Tensor:
             return x.triu() + x.triu(1).transpose(-1, -2)
 
     def __init__(self, channels: int):
@@ -27,24 +26,31 @@ class SymmetricLinear(Linear):
 
 
 class GRAFFNN(Module):
-    def __init__(self, num_layers: int, in_channels: int, out_channels: int, hidden_channels: int,
-                 act: Union[str, Callable, None] = 'relu', act_kwargs: Optional[Dict[str, Any]] = None,
-                 shared_weights: bool = True, step_size: int = 1):
+    def __init__(self,
+                 num_layers: int,
+                 in_channels: int,
+                 out_channels: int,
+                 hidden_channels: int,
+                 shared_weights: bool = True,
+                 step_size: int = 1,
+                 act: Union[str, Callable, None] = 'relu',
+                 act_kwargs: Optional[Dict[str, Any]] = None):
         super().__init__()
-        self.act = activation_resolver(act, **(act_kwargs or {}))
         self.encoder = MLP([in_channels, hidden_channels])
         self.decoder = MLP([hidden_channels, out_channels])
         if shared_weights:
-            self.graff_convs = ModuleList(num_layers * [GRAFFConv(channels=hidden_channels, step_size=step_size)])
+            self.graff_convs = ModuleList(num_layers * [GRAFFConv(channels=hidden_channels, step_size=step_size,
+                                                                  act=act, act_kwargs=act_kwargs)])
         else:
-            self.graff_convs = ModuleList([GRAFFConv(channels=hidden_channels, step_size=step_size)
+            self.graff_convs = ModuleList([GRAFFConv(channels=hidden_channels, step_size=step_size,
+                                                     act=act, act_kwargs=act_kwargs)
                                            for _ in range(num_layers)])
 
-    def forward(self, x, edge_index):
+    def forward(self, x, edge_index, edge_weight: OptTensor = None):
         x_0 = self.encoder(x)
         x = x_0
         for graff_conv in self.graff_convs:
-            x = graff_conv(x, x_0, edge_index)
+            x = graff_conv(x, x_0, edge_index, edge_weight)
             if self.act is not None:
                 x = self.act(x)
         return self.decoder(x)
@@ -54,13 +60,21 @@ class GRAFFConv(MessagePassing):
     _cached_edge_index: Optional[OptPairTensor]
     _cached_adj_t: Optional[SparseTensor]
 
-    def __init__(self, channels: int, step_size: int = 1,
-                 cached: bool = False, add_self_loops: bool = True, normalize: bool = True, **kwargs):
+    def __init__(self,
+                 channels: int,
+                 step_size: int = 1,
+                 act: Union[str, Callable, None] = 'relu',
+                 act_kwargs: Optional[Dict[str, Any]] = None,
+                 cached: bool = False,
+                 add_self_loops: bool = True,
+                 normalize: bool = True,
+                 **kwargs):
         kwargs.setdefault('aggr', 'add')
         super().__init__(**kwargs)
 
         self.channels = channels
         self.step_size = step_size
+        self.act = activation_resolver(act, **(act_kwargs or {}))
         self.cached = cached
         self.add_self_loops = add_self_loops
         self.normalize = normalize
@@ -77,8 +91,7 @@ class GRAFFConv(MessagePassing):
         self._cached_edge_index = None
         self._cached_adj_t = None
 
-    def forward(self, x: Tensor, x_0: Tensor, edge_index: Adj,
-                edge_weight: OptTensor = None) -> Tensor:
+    def forward(self, x: Tensor, x_0: Tensor, edge_index: Adj, edge_weight: OptTensor = None) -> Tensor:
         if self.normalize:
             if isinstance(edge_index, Tensor):
                 cache = self._cached_edge_index
@@ -103,7 +116,7 @@ class GRAFFConv(MessagePassing):
                     edge_index = cache
 
         internal_repr = self.propagate(edge_index, x=self.internal_mixer(x), edge_weight=edge_weight)
-        return x + self.step_size * (internal_repr - self.external_mixer(x) - self.initial_mixer(x_0))
+        return x + self.step_size * self.act(internal_repr - self.external_mixer(x) - self.initial_mixer(x_0))
 
     def message(self, x_j: Tensor, edge_weight: OptTensor) -> Tensor:
         return x_j if edge_weight is None else edge_weight.view(-1, 1) * x_j
