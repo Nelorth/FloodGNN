@@ -1,18 +1,34 @@
 from typing import Any, Callable, Dict, Optional, Union
 
+import torch
 from torch import Tensor
 from torch.nn import Module, ModuleList
+from torch.nn.utils.parametrize import register_parametrization
 from torch_geometric.nn import MLP
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn.conv.gcn_conv import gcn_norm
+from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.nn.resolver import activation_resolver
 from torch_geometric.typing import Adj, OptPairTensor, OptTensor, SparseTensor
 from torch_geometric.utils import spmm
 
 
+class SymmetricLinear(Linear):
+    """
+    only for square matrices, i.e., in_channels == out_channels
+    """
+    class Symmetrizer(Module):
+        def forward(self, x: Tensor):
+            return x.triu() + x.triu(1).transpose(-1, -2)
+
+    def __init__(self, channels: int):
+        super().__init__(channels, channels, bias=False, weight_initializer='glorot')
+        register_parametrization(self, 'weight', self.Symmetrizer())
+
+
 class GRAFFNN(Module):
     def __init__(self, num_layers: int, in_channels: int, out_channels: int, hidden_channels: int,
-                 act: Union[str, Callable, None] = "relu", act_kwargs: Optional[Dict[str, Any]] = None,
+                 act: Union[str, Callable, None] = 'relu', act_kwargs: Optional[Dict[str, Any]] = None,
                  shared_weights: bool = True, step_size: int = 1):
         super().__init__()
         self.act = activation_resolver(act, **(act_kwargs or {}))
@@ -24,11 +40,11 @@ class GRAFFNN(Module):
             self.graff_convs = ModuleList([GRAFFConv(channels=hidden_channels, step_size=step_size)
                                            for _ in range(num_layers)])
 
-    def forward(self, data):
-        x_0 = self.encoder(data.x)
+    def forward(self, x, edge_index):
+        x_0 = self.encoder(x)
         x = x_0
         for graff_conv in self.graff_convs:
-            x = graff_conv(x, x_0, data.edge_index)
+            x = graff_conv(x, x_0, edge_index)
             if self.act is not None:
                 x = self.act(x)
         return self.decoder(x)
@@ -87,7 +103,7 @@ class GRAFFConv(MessagePassing):
                     edge_index = cache
 
         internal_repr = self.propagate(edge_index, x=self.internal_mixer(x), edge_weight=edge_weight)
-        return x + self.step_size * (internal_repr - self.external_mixer(x))  # - self.initial_mixer(x_0))
+        return x + self.step_size * (internal_repr - self.external_mixer(x) - self.initial_mixer(x_0))
 
     def message(self, x_j: Tensor, edge_weight: OptTensor) -> Tensor:
         return x_j if edge_weight is None else edge_weight.view(-1, 1) * x_j

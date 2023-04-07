@@ -1,12 +1,21 @@
-from torch.nn import Module, ModuleList, ReLU, Sequential
+from typing import Any, Callable, Dict, Optional, Union
+from torch import Tensor
+from torch.nn import Module, ModuleList
+from torch.nn import ReLU, Sequential
+from torch.nn.functional import mse_loss
 from torch_geometric.nn import GCNConv, Linear
+from torch_geometric.nn import MLP
+from torch_geometric.nn.conv import MessagePassing
+from torch_geometric.nn.conv.gcn_conv import gcn_norm
 from torch_geometric.nn.resolver import activation_resolver
+from torch_geometric.typing import Adj, OptPairTensor, OptTensor, SparseTensor
+from torch_geometric.utils import spmm
 
 
 # IPU paradigm demands that models return the loss as second output
 def append_MSE(x, y):
     if y is not None:
-        return x, F.mse_loss(x, y)
+        return x, mse_loss(x, y)
     return x
 
 
@@ -180,7 +189,7 @@ class GRAFFConv(MessagePassing):
                     edge_index = cache
 
         internal_repr = self.propagate(edge_index, x=self.internal_mixer(x), edge_weight=edge_weight)
-        return x + self.step_size * (internal_repr - self.external_mixer(x))  #- self.initial_mixer(x_0))
+        return x + self.step_size * (internal_repr - self.external_mixer(x) - self.initial_mixer(x_0))
 
     def message(self, x_j: Tensor, edge_weight: OptTensor) -> Tensor:
         return x_j if edge_weight is None else edge_weight.view(-1, 1) * x_j
