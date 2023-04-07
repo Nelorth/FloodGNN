@@ -17,10 +17,10 @@ def append_mse(x, y):
 
 # functionality: encoder/decoder, evolution tracking
 class BaseModel(Module):
-    def __init__(self, in_channels, hidden_channels, residual):
+    def __init__(self, in_channels, hidden_channels):
+        super().__init__()
         self.encoder = Sequential(Linear(in_channels, hidden_channels, weight_initializer="glorot"), ReLU(inplace=True))
         self.decoder = Linear(hidden_channels, 1, weight_initializer="glorot")
-        self.residual = residual
         self.evolution = None  # for tracking hidden layer activations
 
     def start_evolution(self, evo_tracking):
@@ -37,7 +37,8 @@ class BaseModel(Module):
 
 class FloodMLP(BaseModel):
     def __init__(self, in_channels, hidden_channels, num_hidden, residual):
-        super().__init__(in_channels, hidden_channels, residual)
+        super().__init__(in_channels, hidden_channels)
+        self.residual = residual
         self.dense_layers = ModuleList([Linear(hidden_channels, hidden_channels, weight_initializer="glorot")
                                         for _ in range(num_hidden)])
 
@@ -55,11 +56,12 @@ class FloodMLP(BaseModel):
 
 
 class FloodGCN(BaseModel):
-    def __init__(self, in_channels, hidden_channels, num_convs, residual, edge_weights):
-        super().__init__(in_channels, hidden_channels, residual)
-        self.gcn_layers = ModuleList([GCNConv(hidden_channels, hidden_channels, add_self_loops=False)
-                                      for _ in range(num_convs)])
+    def __init__(self, in_channels, hidden_channels, num_hidden, residual, edge_weights):
+        super().__init__(in_channels, hidden_channels)
+        self.residual = residual
         self.edge_weights = edge_weights
+        self.gcn_layers = ModuleList([GCNConv(hidden_channels, hidden_channels, add_self_loops=False)
+                                      for _ in range(num_hidden)])
 
     def forward(self, x, edge_index, y=None, evo_tracking=False):
         super().start_evolution(evo_tracking)
@@ -77,14 +79,14 @@ class FloodGCN(BaseModel):
 
 
 class FloodGRAFFNN(BaseModel):
-    def __init__(self, in_channels, hidden_channels, num_convs, shared_weights, step_size, edge_weights):
-        super().__init__(in_channels, hidden_channels, True)
+    def __init__(self, in_channels, hidden_channels, num_hidden, shared_weights, step_size, edge_weights):
+        super().__init__(in_channels, hidden_channels)
+        self.edge_weights = edge_weights
         if shared_weights:
-            self.graff_convs = ModuleList(num_convs * [GRAFFConv(channels=hidden_channels, step_size=step_size)])
+            self.graff_convs = ModuleList(num_hidden * [GRAFFConv(channels=hidden_channels, step_size=step_size)])
         else:
             self.graff_convs = ModuleList([GRAFFConv(channels=hidden_channels, step_size=step_size)
-                                           for _ in range(num_convs)])
-        self.edge_weights = edge_weights
+                                           for _ in range(num_hidden)])
 
     def forward(self, x, edge_index, y=None, evo_tracking=False):
         super().start_evolution(evo_tracking)
