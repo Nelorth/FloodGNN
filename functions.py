@@ -1,4 +1,5 @@
 import copy
+import matplotlib.pyplot as plt
 import numpy as np
 import poptorch
 import random
@@ -6,7 +7,8 @@ import torch
 import torch.nn as nn
 
 from datetime import datetime
-from lamah_models import FloodMLP, FloodGCN, FloodGRAFFNN
+from matplotlib.ticker import MaxNLocator
+from models import FloodMLP, FloodGCN, FloodGRAFFNN
 from torch_geometric.loader import DataLoader
 from torchinfo import summary
 from tqdm import tqdm
@@ -21,19 +23,19 @@ def ensure_reproducibility(seed):
     torch.backends.cudnn.benchmark = False
 
 
-def init_edge_weights(weight_type, data):
+def init_edge_weights(weight_type, edge_attr):
     if weight_type == "disabled":
-        return torch.zeros(data.num_edges)
+        return torch.zeros(edge_attr.size(0))
     elif weight_type == "binary":
-        return torch.ones(data.num_edges)
+        return torch.ones(edge_attr.size(0))
     elif weight_type == "dist_hdn":
-        return data.edge_attr[:, 0]
+        return edge_attr[:, 0]
     elif weight_type == "elev_diff":
-        return data.edge_attr[:, 1]
+        return edge_attr[:, 1]
     elif weight_type == "strm_slope":
-        return data.edge_attr[:, 2]
+        return edge_attr[:, 2]
     elif weight_type == "learned":
-        return nn.Parameter(torch.ones(data.num_edges))
+        return nn.Parameter(torch.ones(edge_attr.size(0)))
     else:
         raise ValueError("Invalid weight type given!")
 
@@ -62,8 +64,7 @@ def construct_model(hparams, edge_weights):
 def train_step(model, train_loader, optimizer, device):
     model.train()
     train_loss = 0
-    pbar = tqdm(train_loader, desc="Training")
-    for batch in pbar:
+    for batch in tqdm(train_loader, desc="Training"):
         if device != "IPU":
             batch = batch.to(device)
             optimizer.zero_grad()
@@ -72,7 +73,6 @@ def train_step(model, train_loader, optimizer, device):
             loss.backward()
             optimizer.step()
         train_loss += loss.item() * batch.num_graphs / len(train_loader.dataset)
-        pbar.set_postfix(train_loss=train_loss)
     return train_loss
 
 
@@ -80,13 +80,11 @@ def val_step(model, val_loader, device):
     model.eval()
     val_loss = 0
     with torch.no_grad():
-        pbar = tqdm(val_loader, desc="Validating")
-        for batch in pbar:
+        for batch in tqdm(val_loader, desc="Validating"):
             if device != "IPU":
                 batch = batch.to(device)
             out, loss = model(batch.x, batch.edge_index, batch.y)
             val_loss += loss.item() * batch.num_graphs / len(val_loader.dataset)
-            pbar.set_postfix(val_loss=val_loss)
     return val_loss
 
 
@@ -101,11 +99,7 @@ def train(model, train_dataset, val_dataset, hparams, on_ipu=False):
                                         lr=hparams["training"]["learning_rate"],
                                         weight_decay=hparams["training"]["weight_decay"])
         model = poptorch.trainingModel(model, optimizer=optimizer)
-        data = train_dataset[0]
-        fake_x = data.x.repeat(hparams["training"]["batch_size"], 1)
-        fake_y = data.y.repeat(hparams["training"]["batch_size"], 1)
-        fake_idx = data.edge_index.repeat(1, hparams["training"]["batch_size"])
-        model.compile(fake_x, fake_idx, fake_y)
+        compile_ipu_model(model, train_loader)
         device = "IPU"
         print("Training on IPU")
     else:
@@ -118,11 +112,9 @@ def train(model, train_dataset, val_dataset, hparams, on_ipu=False):
 
     history = {"train_loss": [], "val_loss": [], "model_params": [], "optim_params": []}
 
-    chkpt_dir = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
     for epoch in range(hparams["training"]["num_epochs"]):
         train_loss = train_step(model, train_loader, optimizer, device)
-        val_loss = val_step(model, val_loader, device, on_ipu)
+        val_loss = val_step(model, val_loader, device)
 
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
@@ -138,3 +130,43 @@ def train(model, train_dataset, val_dataset, hparams, on_ipu=False):
         "hparams": hparams
     }, datetime.now().strftime("runs/%Y-%m-%d_%H-%M-%S.run"))
     return history
+
+
+def evaluate(model, dataset, hparams, on_ipu=False):
+    loader = DataLoader(dataset, batch_size=hparams["training"]["batch_size"], shuffle=False, drop_last=on_ipu)
+    if on_ipu:
+        device = "IPU"
+        model = poptorch.inferenceModel(model)
+        compile_ipu_model(model, loader)
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+    model.eval()
+    test_loss = 0
+    with torch.no_grad():
+        for batch in tqdm(loader, desc="Testing"):
+            if device != "IPU":
+                batch = batch.to(device)
+            pred, loss = model(batch.x, batch.edge_index, batch.y)
+            test_loss += loss.item() * batch.num_graphs / len(dataset)
+    return test_loss
+
+
+def compile_ipu_model(model, loader):
+    data = loader.dataset[0]
+    fake_x = data.x.repeat(loader.batch_size, 1)
+    fake_y = data.y.repeat(loader.batch_size, 1)
+    fake_idx = data.edge_index.repeat(1, loader.batch_size)
+    model.compile(fake_x, fake_idx, fake_y)
+
+
+def plot_loss(train_loss, val_loss):
+    plt.figure()
+    plt.plot(train_loss, label="train")
+    plt.plot(val_loss, label="val")
+    plt.xlabel("epoch")
+    plt.ylabel("normalized MSE")
+    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.ylim(0, 1)
+    plt.legend()
+    plt.show()
