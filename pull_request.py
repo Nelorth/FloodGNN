@@ -116,7 +116,9 @@ class GRAFFConv(MessagePassing):
                     edge_index = cache
 
         internal_repr = self.propagate(edge_index, x=self.internal_mixer(x), edge_weight=edge_weight)
-        return x + self.step_size * self.act(internal_repr - self.external_mixer(x) - self.initial_mixer(x_0))
+        external_repr = self.external_mixer(x)
+        initial_repr = self.initial_mixer(x_0)
+        return x + self.step_size * self.act(internal_repr - external_repr - initial_repr)
 
     def message(self, x_j: Tensor, edge_weight: OptTensor) -> Tensor:
         return x_j if edge_weight is None else edge_weight.view(-1, 1) * x_j
