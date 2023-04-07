@@ -17,12 +17,15 @@ def append_mse(x, y):
 
 # functionality: encoder/decoder, evolution tracking
 class BaseModel(Module):
-    def __init__(self, window_size_hrs, hidden_size, residual):
-        self.encoder = Sequential(Linear(window_size_hrs, hidden_size, weight_initializer="glorot"),
-                                  ReLU(inplace=True))
-        self.decoder = Linear(hidden_size, 1, weight_initializer="glorot")
+    def __init__(self, in_channels, hidden_channels, residual):
+        self.encoder = Sequential(Linear(in_channels, hidden_channels, weight_initializer="glorot"), ReLU(inplace=True))
+        self.decoder = Linear(hidden_channels, 1, weight_initializer="glorot")
         self.residual = residual
         self.evolution = None  # for tracking hidden layer activations
+
+    def start_evolution(self, evo_tracking):
+        self.evolution = None
+        self.evo_tracking = evo_tracking
 
     def update_evolution(self, x):
         if self.evo_tracking:
@@ -30,10 +33,6 @@ class BaseModel(Module):
                 self.evolution = [x]
             else:
                 self.evolution.append(x)
-
-    def reset_evolution(self, evo_tracking):
-        self.evolution = None
-        self.evo_tracking = evo_tracking
 
 
 class FloodMLP(BaseModel):
@@ -43,7 +42,7 @@ class FloodMLP(BaseModel):
                                         for _ in range(num_hidden)])
 
     def forward(self, x, edge_index, y=None, evo_tracking=False):
-        super().reset_evolution(evo_tracking)
+        super().start_evolution(evo_tracking)
 
         x = self.encoder(x)
         self.update_evolution(x)
@@ -63,7 +62,7 @@ class FloodGCN(BaseModel):
         self.edge_weights = edge_weights
 
     def forward(self, x, edge_index, y=None, evo_tracking=False):
-        super().reset_evolution(evo_tracking)
+        super().start_evolution(evo_tracking)
         num_graphs = edge_index.size(1) // len(self.edge_weights)
         edge_weights = self.edge_weights.clamp(min=1e-10).repeat(num_graphs).to(x.device)
 
@@ -88,12 +87,16 @@ class FloodGRAFFNN(BaseModel):
         self.edge_weights = edge_weights
 
     def forward(self, x, edge_index, y=None, evo_tracking=False):
-        super().reset_evolution(evo_tracking)
+        super().start_evolution(evo_tracking)
         num_graphs = edge_index.size(1) // len(self.edge_weights)
         edge_weights = self.edge_weights.clamp(min=1e-10).repeat(num_graphs).to(x.device)
 
         x_0 = self.encoder(x)
         x = x_0
+        self.update_evolution(x)
         for graff_conv in self.graff_convs:
             x = graff_conv(x, x_0, edge_index, edge_weights)
-        return self.decoder(x)
+            self.update_evolution(x)
+        x = self.decoder(x)
+
+        return append_mse(x, y)
