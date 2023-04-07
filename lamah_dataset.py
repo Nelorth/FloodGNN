@@ -33,8 +33,8 @@ class LamaHDataset(Dataset):
             for year in years]
 
         adjacency = pd.read_csv(self.processed_paths[0])
-        gauges = list(sorted(set(adjacency["ID"]).union(adjacency["NEXTDOWNID"])))
-        rev_index = {gauge_id: i for i, gauge_id in enumerate(gauges)}
+        self.gauges = list(sorted(set(adjacency["ID"]).union(adjacency["NEXTDOWNID"])))
+        rev_index = {gauge_id: i for i, gauge_id in enumerate(self.gauges)}
         edge_cols = adjacency[["ID", "NEXTDOWNID"]].applymap(lambda x: rev_index[x])
         self.edge_index = torch.tensor(edge_cols.values.transpose(), dtype=torch.long)
         weight_cols = adjacency[["dist_hdn", "elev_diff", "strm_slope"]]
@@ -49,7 +49,7 @@ class LamaHDataset(Dataset):
 
         self.year_tensors = [[] for _ in years]
         print("Loading dataset into memory...")
-        for gauge_id in tqdm(gauges):
+        for gauge_id in tqdm(self.gauges):
             df = pd.read_csv(f"{self.raw_dir}/{self.raw_file_names[1]}/hourly/ID_{gauge_id}.csv",
                              sep=";", usecols=["YYYY", "qobs"])
             if normalize:
@@ -142,11 +142,11 @@ class LamaHDataset(Dataset):
         y = year_tensor[:, offset + self.window_size_hrs + (self.lead_time_hrs - 1)]
         return Data(x=x, y=y.unsqueeze(-1), edge_index=self.edge_index, edge_attr=self.edge_attr)
 
-    def get_mean(self):
-        return self.mean
+    def normalize(self, x):
+        return (x - self.mean.unsqueeze(-1)) / self.std.unsqueeze(-1)
 
-    def get_std(self):
-        return self.std
+    def denormalize(self, x):
+        return self.std.unsqueeze(-1) * x + self.mean.unsqueeze(-1)
 
     def subsample_years(self, years):
         # TODO switch to itertools.pairwise once Colab on Python 3.10
