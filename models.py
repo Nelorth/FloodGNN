@@ -1,58 +1,51 @@
-from torch.nn import Module, ModuleList
-from torch.nn import ReLU, Sequential
-from torch.nn.functional import mse_loss, relu
-from torch_geometric.nn import GCNConv, Linear
-from torch_geometric.nn import MLP
-from torch_geometric.typing import OptTensor
-
+from abc import ABC, abstractmethod
 from graff_conv import GRAFFConv
+from torch.nn import Module, ModuleList
+from torch.nn.functional import mse_loss, relu
+from torch_geometric.nn import GCNConv, GCN2Conv, Linear
 
 
-# IPU paradigm demands that models return the loss as second output
-def append_mse(x, y):
-    if y is not None:
-        return x, mse_loss(x, y)
-    return x
-
-
-# functionality: encoder/decoder, evolution tracking
-class BaseModel(Module):
+# functionality: encoder/decoder, evolution tracking, IPU loss return
+class BaseModel(Module, ABC):
     def __init__(self, in_channels, hidden_channels):
         super().__init__()
-        self.encoder = Sequential(Linear(in_channels, hidden_channels, weight_initializer="glorot"), ReLU(inplace=True))
+        self.encoder = Linear(in_channels, hidden_channels, weight_initializer="glorot")
         self.decoder = Linear(hidden_channels, 1, weight_initializer="glorot")
         self.evolution = None  # for tracking hidden layer activations
 
-    def start_evolution(self, evo_tracking):
-        self.evolution = None
-        self.evo_tracking = evo_tracking
+    def forward(self, x, edge_index, y=None, evo_tracking=False):
+        if self.layers is None:
+            raise ValueError("self.layers is undefined")
+        num_graphs = edge_index.size(1) // len(self.edge_weights)
+        edge_weights = self.edge_weights.clamp(min=1e-10).repeat(num_graphs).to(x.device)
 
-    def update_evolution(self, x):
-        if self.evo_tracking:
-            if self.evolution is None:
-                self.evolution = [x]
-            else:
+        x_0 = self.encoder(x)
+        self.evolution = [x_0] if evo_tracking else None
+        x = x_0
+        for layer in self.layers:
+            x = self.apply_layer(layer, x, x_0, edge_index, edge_weights)
+            if evo_tracking:
                 self.evolution.append(x)
+        x = self.decoder(x)
+
+        if y is not None:  # IPU paradigm demands that models return the loss as 2nd output
+            return x, mse_loss(x, y)
+        return x
+
+    @abstractmethod
+    def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
+        pass
 
 
 class FloodMLP(BaseModel):
     def __init__(self, in_channels, hidden_channels, num_hidden, residual):
         super().__init__(in_channels, hidden_channels)
         self.residual = residual
-        self.dense_layers = ModuleList([Linear(hidden_channels, hidden_channels, weight_initializer="glorot")
-                                        for _ in range(num_hidden)])
+        self.layers = ModuleList([Linear(hidden_channels, hidden_channels, weight_initializer="glorot")
+                                  for _ in range(num_hidden)])
 
-    def forward(self, x, edge_index, y=None, evo_tracking=False):
-        super().start_evolution(evo_tracking)
-
-        x = self.encoder(x)
-        self.update_evolution(x)
-        for layer in self.dense_layers:
-            x = relu(layer(x)) + (x if self.residual else 0)
-            self.update_evolution(x)
-        x = self.decoder(x)
-
-        return append_mse(x, y)
+    def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
+        return relu(layer(x)) + (x if self.residual else 0)
 
 
 class FloodGCN(BaseModel):
@@ -60,22 +53,22 @@ class FloodGCN(BaseModel):
         super().__init__(in_channels, hidden_channels)
         self.residual = residual
         self.edge_weights = edge_weights
-        self.gcn_layers = ModuleList([GCNConv(hidden_channels, hidden_channels, add_self_loops=False)
-                                      for _ in range(num_hidden)])
+        self.layers = ModuleList([GCNConv(hidden_channels, hidden_channels, add_self_loops=False)
+                                  for _ in range(num_hidden)])
 
-    def forward(self, x, edge_index, y=None, evo_tracking=False):
-        super().start_evolution(evo_tracking)
-        num_graphs = edge_index.size(1) // len(self.edge_weights)
-        edge_weights = self.edge_weights.clamp(min=1e-10).repeat(num_graphs).to(x.device)
+    def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
+        return relu(layer(x, edge_index, edge_weights)) + (x if self.residual else 0)
 
-        x = self.encoder(x)
-        self.update_evolution(x)
-        for conv in self.gcn_layers:
-            x = relu(conv(x, edge_index, edge_weights)) + (x if self.residual else 0)
-            self.update_evolution(x)
-        x = self.decoder(x)
 
-        return append_mse(x, y)
+class FloodGCNII(BaseModel):
+    def __init__(self, in_channels, hidden_channels, num_hidden, edge_weights):
+        super().__init__(in_channels, hidden_channels)
+        self.edge_weights = edge_weights
+        self.layers = ModuleList([GCN2Conv(hidden_channels, hidden_channels, add_self_loops=False)
+                                  for _ in range(num_hidden)])
+
+    def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
+        return relu(layer(x, x_0, edge_index, edge_weights))
 
 
 class FloodGRAFFNN(BaseModel):
@@ -83,22 +76,10 @@ class FloodGRAFFNN(BaseModel):
         super().__init__(in_channels, hidden_channels)
         self.edge_weights = edge_weights
         if shared_weights:
-            self.graff_convs = ModuleList(num_hidden * [GRAFFConv(channels=hidden_channels, step_size=step_size)])
+            self.layers = ModuleList(num_hidden * [GRAFFConv(channels=hidden_channels, step_size=step_size)])
         else:
-            self.graff_convs = ModuleList([GRAFFConv(channels=hidden_channels, step_size=step_size)
-                                           for _ in range(num_hidden)])
+            self.layers = ModuleList([GRAFFConv(channels=hidden_channels, step_size=step_size)
+                                      for _ in range(num_hidden)])
 
-    def forward(self, x, edge_index, y=None, evo_tracking=False):
-        super().start_evolution(evo_tracking)
-        num_graphs = edge_index.size(1) // len(self.edge_weights)
-        edge_weights = self.edge_weights.clamp(min=1e-10).repeat(num_graphs).to(x.device)
-
-        x_0 = self.encoder(x)
-        x = x_0
-        self.update_evolution(x)
-        for graff_conv in self.graff_convs:
-            x = graff_conv(x, x_0, edge_index, edge_weights)
-            self.update_evolution(x)
-        x = self.decoder(x)
-
-        return append_mse(x, y)
+    def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
+        return layer(x, x_0, edge_index, edge_weights)  # GRAFFConv already includes non-linearity

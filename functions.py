@@ -8,7 +8,7 @@ import torch.nn as nn
 
 from datetime import datetime
 from matplotlib.ticker import MaxNLocator
-from models import FloodMLP, FloodGCN, FloodGRAFFNN
+from models import FloodMLP, FloodGCN, FloodGCNII, FloodGRAFFNN
 from torch_geometric.loader import DataLoader
 from torchinfo import summary
 from tqdm import tqdm
@@ -53,12 +53,19 @@ def construct_model(hparams, edge_weights):
                         num_hidden=hparams["model"]["propagation_dist"],
                         residual=hparams["model"]["residual"],
                         edge_weights=edge_weights)
+    elif model_arch == "GCNII":
+        return FloodGCNII(in_channels=hparams["data"]["window_size"],
+                          hidden_channels=hparams["model"]["hidden_size"],
+                          num_hidden=hparams["model"]["propagation_dist"],
+                          edge_weights=edge_weights)
     elif model_arch == "GRAFFNN":
         return FloodGRAFFNN(in_channels=hparams["data"]["window_size"],
                             hidden_channels=hparams["model"]["hidden_size"],
                             num_hidden=hparams["model"]["propagation_dist"],
-                            edge_weights=edge_weights)
-    raise ValueError("Unknown model architecture", hparams["model"]["architecture"])
+                            edge_weights=edge_weights,
+                            shared_weights=hparams["model"]["shared_weights"],
+                            step_size=hparams["model"]["step_size"])
+    raise ValueError("unknown model architecture", model_arch)
 
 
 def train_step(model, train_loader, optimizer, device):
