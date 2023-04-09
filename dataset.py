@@ -44,8 +44,8 @@ class LamaHDataset(Dataset):
             self.edge_index, self.edge_attr = to_undirected(self.edge_index, self.edge_attr, reduce="mean")
 
         statistics = pd.read_csv(self.processed_paths[1], index_col="ID")
-        self.mean = torch.tensor(statistics["mean"].values, dtype=torch.float)
-        self.std = torch.tensor(statistics["std"].values, dtype=torch.float)
+        self.mean = torch.tensor(statistics["mean"].values, dtype=torch.float).unsqueeze(-1)
+        self.std = torch.tensor(statistics["std"].values, dtype=torch.float).unsqueeze(-1)
 
         self.year_tensors = [[] for _ in years]
         print("Loading dataset into memory...")
@@ -143,10 +143,10 @@ class LamaHDataset(Dataset):
         return Data(x=x, y=y.unsqueeze(-1), edge_index=self.edge_index, edge_attr=self.edge_attr)
 
     def normalize(self, x):
-        return (x - self.mean.unsqueeze(-1)) / self.std.unsqueeze(-1)
+        return (x - self.mean) / self.std
 
     def denormalize(self, x):
-        return self.std.unsqueeze(-1) * x + self.mean.unsqueeze(-1)
+        return self.std * x + self.mean
 
     def subsample_years(self, years):
         # TODO switch to itertools.pairwise once Colab on Python 3.10

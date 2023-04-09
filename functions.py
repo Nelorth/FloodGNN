@@ -23,21 +23,21 @@ def ensure_reproducibility(seed):
     torch.backends.cudnn.benchmark = False
 
 
-def init_edge_weights(weight_type, edge_attr):
-    if weight_type == "disabled":
+def init_edge_weights(adjacency_type, edge_attr):
+    if adjacency_type == "isolated":
         return torch.zeros(edge_attr.size(0))
-    elif weight_type == "binary":
+    elif adjacency_type == "binary":
         return torch.ones(edge_attr.size(0))
-    elif weight_type == "dist_hdn":
+    elif adjacency_type == "dist_hdn":
         return edge_attr[:, 0]
-    elif weight_type == "elev_diff":
+    elif adjacency_type == "elev_diff":
         return edge_attr[:, 1]
-    elif weight_type == "strm_slope":
+    elif adjacency_type == "strm_slope":
         return edge_attr[:, 2]
-    elif weight_type == "learned":
+    elif adjacency_type == "learned":
         return nn.Parameter(torch.ones(edge_attr.size(0)))
     else:
-        raise ValueError("Invalid weight type given!")
+        raise ValueError("invalid adjacency type", adjacency_type)
 
 
 def construct_model(hparams, edge_weights):
@@ -132,6 +132,9 @@ def train(model, train_dataset, val_dataset, hparams, on_ipu=False):
             epoch + 1, hparams['training']['num_epochs'], train_loss, val_loss
         ))
 
+    if on_ipu:
+        model.detachFromDevice()
+
     torch.save({
         "history": history,
         "hparams": hparams
@@ -142,7 +145,6 @@ def train(model, train_dataset, val_dataset, hparams, on_ipu=False):
 def evaluate(model, dataset, hparams, on_ipu=False):
     loader = DataLoader(dataset, batch_size=hparams["training"]["batch_size"], shuffle=False, drop_last=on_ipu)
     if on_ipu:
-        device = "IPU"
         model = poptorch.inferenceModel(model)
         compile_ipu_model(model, loader)
     else:
@@ -152,10 +154,12 @@ def evaluate(model, dataset, hparams, on_ipu=False):
     test_loss = 0
     with torch.no_grad():
         for batch in tqdm(loader, desc="Testing"):
-            if device != "IPU":
+            if not on_ipu:
                 batch = batch.to(device)
             pred, loss = model(batch.x, batch.edge_index, batch.y)
             test_loss += loss.item() * batch.num_graphs / len(dataset)
+    if on_ipu:
+        model.detachFromDevice()
     return test_loss
 
 

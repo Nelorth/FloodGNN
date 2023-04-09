@@ -16,11 +16,16 @@ class BaseModel(Module, ABC):
     def forward(self, x, edge_index, y=None, evo_tracking=False):
         if self.layers is None:
             raise ValueError("self.layers is undefined")
-        num_graphs = edge_index.size(1) // len(self.edge_weights)
-        edge_weights = self.edge_weights.clamp(min=1e-10).repeat(num_graphs).to(x.device)
+
+        if self.edge_weights is not None:
+            num_graphs = edge_index.size(1) // len(self.edge_weights)
+            edge_weights = self.edge_weights.clamp(min=1e-10).repeat(num_graphs).to(x.device)
+        else:
+            edge_weights = None
 
         x_0 = self.encoder(x)
         self.evolution = [x_0] if evo_tracking else None
+
         x = x_0
         for layer in self.layers:
             x = self.apply_layer(layer, x, x_0, edge_index, edge_weights)
@@ -41,6 +46,7 @@ class FloodMLP(BaseModel):
     def __init__(self, in_channels, hidden_channels, num_hidden, residual):
         super().__init__(in_channels, hidden_channels)
         self.residual = residual
+        self.edge_weights = None
         self.layers = ModuleList([Linear(hidden_channels, hidden_channels, weight_initializer="glorot")
                                   for _ in range(num_hidden)])
 

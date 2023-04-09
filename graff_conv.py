@@ -89,7 +89,7 @@ class SymmetricLinear(Linear):
 
     class Symmetrizer(Module):
         def forward(self, x: Tensor) -> Tensor:
-            return x.triu() + x.triu(1).transpose(-1, -2)
+            return (x + x.transpose(-1, -2)) / 2
 
     def __init__(self, channels: int):
         super().__init__(channels, channels, bias=False, weight_initializer='glorot')
