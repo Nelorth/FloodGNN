@@ -21,12 +21,14 @@ class LamaHDataset(Dataset):
     DATA_URL = "https://zenodo.org/record/5153305/files/1_LamaH-CE_daily_hourly.tar.gz"
 
     def __init__(self, root, years=range(2000, 2018), window_size_hrs=24, stride_length_hrs=1, lead_time_hrs=1,
-                 bidirectional=False, normalize=False):
+                 bidirectional=False, normalized=False):
         super().__init__(root)  # calls download() and process() if necessary
 
         self.window_size_hrs = window_size_hrs
         self.stride_length_hrs = stride_length_hrs
         self.lead_time_hrs = lead_time_hrs
+        self.bidirectional = bidirectional
+        self.normalized = normalized
         self.years = years
         self.year_sizes = [
             (24 * (365 + int(year % 4 == 0)) - (window_size_hrs + lead_time_hrs)) // stride_length_hrs + 1
@@ -52,7 +54,7 @@ class LamaHDataset(Dataset):
         for gauge_id in tqdm(self.gauges):
             df = pd.read_csv(f"{self.raw_dir}/{self.raw_file_names[1]}/hourly/ID_{gauge_id}.csv",
                              sep=";", usecols=["YYYY", "qobs"])
-            if normalize:
+            if normalized:
                 df["qobs"] = (df["qobs"] - statistics.loc[gauge_id, "mean"]) / statistics.loc[gauge_id, "std"]
             for i, year in enumerate(years):
                 self.year_tensors[i].append(torch.tensor(df[df["YYYY"] == year]["qobs"].values, dtype=torch.float))
