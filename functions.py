@@ -9,6 +9,7 @@ import torch.nn as nn
 from datetime import datetime
 from matplotlib.ticker import MaxNLocator
 from models import FloodMLP, FloodGCN, FloodGCNII, FloodGRAFFNN
+from torch.nn.functional import mse_loss
 from torch_geometric.loader import DataLoader
 from torchinfo import summary
 from tqdm import tqdm
@@ -35,7 +36,7 @@ def init_edge_weights(adjacency_type, edge_attr):
     elif adjacency_type == "strm_slope":
         return edge_attr[:, 2]
     elif adjacency_type == "learned":
-        return nn.Parameter(torch.ones(edge_attr.size(0)))
+        return nn.Parameter(1.5 * torch.rand(edge_attr.size(0)) + 0.5)
     else:
         raise ValueError("invalid adjacency type", adjacency_type)
 
@@ -72,11 +73,11 @@ def train_step(model, train_loader, optimizer, device):
     model.train()
     train_loss = 0
     for batch in tqdm(train_loader, desc="Training"):
-        if device != "IPU":
+        if device != "ipu":
             batch = batch.to(device)
             optimizer.zero_grad()
         out, loss = model(batch.x, batch.edge_index, batch.y)
-        if device != "IPU":
+        if device != "ipu":
             loss.backward()
             optimizer.step()
         train_loss += loss.item() * batch.num_graphs / len(train_loader.dataset)
@@ -88,7 +89,7 @@ def val_step(model, val_loader, device):
     val_loss = 0
     with torch.no_grad():
         for batch in tqdm(val_loader, desc="Validating"):
-            if device != "IPU":
+            if device != "ipu":
                 batch = batch.to(device)
             out, loss = model(batch.x, batch.edge_index, batch.y)
             val_loss += loss.item() * batch.num_graphs / len(val_loader.dataset)
@@ -107,7 +108,7 @@ def train(model, train_dataset, val_dataset, hparams, on_ipu=False):
                                         weight_decay=hparams["training"]["weight_decay"])
         model = poptorch.trainingModel(model, optimizer=optimizer)
         compile_ipu_model(model, train_loader)
-        device = "IPU"
+        device = "ipu"
         print("Training on IPU")
     else:
         optimizer = torch.optim.Adam(model.parameters(),
@@ -143,24 +144,27 @@ def train(model, train_dataset, val_dataset, hparams, on_ipu=False):
 
 
 def evaluate(model, dataset, hparams, on_ipu=False):
-    loader = DataLoader(dataset, batch_size=hparams["training"]["batch_size"], shuffle=False, drop_last=on_ipu)
     if on_ipu:
+        device = "ipu"
         model = poptorch.inferenceModel(model)
-        compile_ipu_model(model, loader)
+        model(dataset[0].x, dataset[0].edge_index)
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
     model.eval()
-    test_loss = 0
+    node_mses = torch.zeros(dataset[0].num_nodes, 1)
     with torch.no_grad():
-        for batch in tqdm(loader, desc="Testing"):
-            if not on_ipu:
-                batch = batch.to(device)
-            pred, loss = model(batch.x, batch.edge_index, batch.y)
-            test_loss += loss.item() * batch.num_graphs / len(dataset)
+        for data in tqdm(dataset, desc="Testing"):
+            if device != "ipu":
+                data = data.to(device)
+            pred = model(data.x, data.edge_index)
+            node_mses += mse_loss(pred, data.y, reduction="none") / len(dataset)
     if on_ipu:
         model.detachFromDevice()
-    return test_loss
+    if dataset.normalized:
+        node_mses *= dataset.std.square()
+    nose_nses = 1 - node_mses / dataset.std.square()
+    return node_mses, nose_nses
 
 
 def compile_ipu_model(model, loader):

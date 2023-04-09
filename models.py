@@ -59,7 +59,7 @@ class FloodGCN(BaseModel):
         super().__init__(in_channels, hidden_channels)
         self.residual = residual
         self.edge_weights = edge_weights
-        self.layers = ModuleList([GCNConv(hidden_channels, hidden_channels, add_self_loops=False)
+        self.layers = ModuleList([GCNConv(hidden_channels, hidden_channels, add_self_loops=False, cached=True)
                                   for _ in range(num_hidden)])
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
@@ -70,7 +70,7 @@ class FloodGCNII(BaseModel):
     def __init__(self, in_channels, hidden_channels, num_hidden, edge_weights):
         super().__init__(in_channels, hidden_channels)
         self.edge_weights = edge_weights
-        self.layers = ModuleList([GCN2Conv(hidden_channels, hidden_channels, add_self_loops=False)
+        self.layers = ModuleList([GCN2Conv(hidden_channels, alpha=0.5, add_self_loops=False, cached=True)
                                   for _ in range(num_hidden)])
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
@@ -82,9 +82,11 @@ class FloodGRAFFNN(BaseModel):
         super().__init__(in_channels, hidden_channels)
         self.edge_weights = edge_weights
         if shared_weights:
-            self.layers = ModuleList(num_hidden * [GRAFFConv(channels=hidden_channels, step_size=step_size)])
+            self.layers = ModuleList(num_hidden * [GRAFFConv(channels=hidden_channels, step_size=step_size,
+                                                             add_self_loops=False, cached=True)])
         else:
-            self.layers = ModuleList([GRAFFConv(channels=hidden_channels, step_size=step_size)
+            self.layers = ModuleList([GRAFFConv(channels=hidden_channels, step_size=step_size,
+                                                add_self_loops=False, cached=True)
                                       for _ in range(num_hidden)])
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
