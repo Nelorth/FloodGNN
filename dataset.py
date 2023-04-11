@@ -46,6 +46,8 @@ class LamaHDataset(Dataset):
             self.edge_index = self.edge_index[[1, 0]]
         elif edge_direction == "bidirectional":
             self.edge_index, self.edge_attr = to_undirected(self.edge_index, self.edge_attr, reduce="mean")
+        elif edge_direction != "downstream":
+            raise ValueError("unknown edge direction", edge_direction)
 
         statistics = pd.read_csv(self.processed_paths[1], index_col="ID")
         self.mean = torch.tensor(statistics["mean"].values, dtype=torch.float).unsqueeze(-1)
