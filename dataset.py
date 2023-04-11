@@ -21,13 +21,14 @@ class LamaHDataset(Dataset):
     DATA_URL = "https://zenodo.org/record/5153305/files/1_LamaH-CE_daily_hourly.tar.gz"
 
     def __init__(self, root, years=range(2000, 2018), window_size=24, stride_length=1, lead_time=1,
-                 edge_direction="downstream", normalized=False):
+                 edge_direction="downstream", self_loops=False, normalized=False):
         super().__init__(root)  # calls download() and process() if necessary
 
         self.window_size_hrs = window_size
         self.stride_length_hrs = stride_length
         self.lead_time_hrs = lead_time
         self.edge_direction = edge_direction
+        self.self_loops = self_loops
         self.normalized = normalized
         self.years = years
         self.year_sizes = [(24 * (365 + int(year % 4 == 0)) - (window_size + lead_time)) // stride_length + 1
@@ -41,7 +42,9 @@ class LamaHDataset(Dataset):
         weight_cols = adjacency[["dist_hdn", "elev_diff", "strm_slope"]]
         self.edge_attr = torch.tensor(weight_cols.values, dtype=torch.float)
 
-        self.edge_index, self.edge_attr = add_self_loops(self.edge_index, self.edge_attr, fill_value="mean")
+        if self_loops:
+            self.edge_index, self.edge_attr = add_self_loops(self.edge_index, self.edge_attr, fill_value="mean")
+
         if edge_direction == "upstream":
             self.edge_index = self.edge_index[[1, 0]]
         elif edge_direction == "bidirectional":
