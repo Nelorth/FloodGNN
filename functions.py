@@ -112,8 +112,8 @@ def train(model, dataset, hparams, on_ipu=False, save_dir="runs/"):
 
     print(summary(model, depth=2))
 
-    val_split = hparams["training"]["val_split"]
-    train_dataset, val_dataset = random_split(dataset, [val_split, 1 - val_split])
+    holdout_size = hparams["training"]["holdout_size"]
+    train_dataset, val_dataset = random_split(dataset, [1 - holdout_size, holdout_size])
     train_loader = DataLoader(train_dataset, batch_size=hparams["training"]["batch_size"], shuffle=True, drop_last=on_ipu)
     val_loader = DataLoader(val_dataset, batch_size=hparams["training"]["batch_size"], shuffle=False, drop_last=on_ipu)
 
