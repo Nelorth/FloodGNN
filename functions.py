@@ -1,6 +1,7 @@
 import copy
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 import poptorch
 import random
 import torch
@@ -107,7 +108,7 @@ def val_step(model, val_loader, device):
     return val_loss
 
 
-def train(model, dataset, hparams, on_ipu=False, save_dir="runs/"):
+def train(model, dataset, hparams, save_dir="runs/", on_ipu=False):
     ensure_reproducibility(hparams["training"]["random_seed"])
 
     print(summary(model, depth=2))
@@ -151,14 +152,16 @@ def train(model, dataset, hparams, on_ipu=False, save_dir="runs/"):
     if on_ipu:
         model.detachFromDevice()
 
+    save_path = datetime.now().strftime(save_dir + "%Y-%m-%d_%H-%M-%S.run")
+    os.makedirs(save_path, exist_ok=True)
     torch.save({
         "history": history,
         "hparams": hparams
-    }, datetime.now().strftime(save_dir + "%Y-%m-%d_%H-%M-%S.run"))
+    }, save_path)
     return history
 
 
-def evaluate(model, dataset, hparams, on_ipu=False):
+def evaluate(model, dataset, on_ipu=False):
     if on_ipu:
         device = "ipu"
         model = poptorch.inferenceModel(model)
