@@ -8,7 +8,7 @@ import torch.nn as nn
 
 from datetime import datetime
 from matplotlib.ticker import MaxNLocator
-from models import FloodMLP, FloodGCN, FloodGCNII, FloodGRAFFNN
+from models import MLP, GCN, ResGCN, GCNII, GRAFFNN
 from torch.nn.functional import mse_loss
 from torch_geometric.loader import DataLoader
 from torchinfo import summary
@@ -44,28 +44,36 @@ def init_edge_weights(adjacency_type, edge_attr):
 def construct_model(hparams, edge_weights):
     model_arch = hparams["model"]["architecture"]
     if model_arch == "MLP":
-        return FloodMLP(in_channels=hparams["data"]["window_size"],
-                        hidden_channels=hparams["model"]["hidden_channels"],
-                        num_hidden=hparams["model"]["num_layers"],
-                        residual=hparams["model"]["residual"])
+        return MLP(in_channels=hparams["data"]["window_size"],
+                   hidden_channels=hparams["model"]["hidden_channels"],
+                   num_hidden=hparams["model"]["num_layers"],
+                   param_sharing=hparams["model"]["param_sharing"])
     elif model_arch == "GCN":
-        return FloodGCN(in_channels=hparams["data"]["window_size"],
-                        hidden_channels=hparams["model"]["hidden_channels"],
-                        num_hidden=hparams["model"]["num_layers"],
-                        residual=hparams["model"]["residual"],
-                        edge_weights=edge_weights)
+        return GCN(in_channels=hparams["data"]["window_size"],
+                   hidden_channels=hparams["model"]["hidden_channels"],
+                   num_hidden=hparams["model"]["num_layers"],
+                   param_sharing=hparams["model"]["param_sharing"],
+                   edge_weights=edge_weights)
+    elif model_arch == "ResGCN":
+        return ResGCN(in_channels=hparams["data"]["window_size"],
+                      hidden_channels=hparams["model"]["hidden_channels"],
+                      num_hidden=hparams["model"]["num_layers"],
+                      param_sharing=hparams["model"]["param_sharing"],
+                      edge_weights=edge_weights)
     elif model_arch == "GCNII":
-        return FloodGCNII(in_channels=hparams["data"]["window_size"],
-                          hidden_channels=hparams["model"]["hidden_channels"],
-                          num_hidden=hparams["model"]["num_layers"],
-                          edge_weights=edge_weights)
+        return GCNII(in_channels=hparams["data"]["window_size"],
+                     hidden_channels=hparams["model"]["hidden_channels"],
+                     num_hidden=hparams["model"]["num_layers"],
+                     param_sharing=hparams["model"]["param_sharing"],
+                     edge_weights=edge_weights)
     elif model_arch == "GRAFFNN":
-        return FloodGRAFFNN(in_channels=hparams["data"]["window_size"],
-                            hidden_channels=hparams["model"]["hidden_channels"],
-                            num_hidden=hparams["model"]["num_layers"],
-                            edge_weights=edge_weights,
-                            shared_weights=hparams["model"]["shared_weights"],
-                            step_size=hparams["model"]["graff_step_size"])
+        return GRAFFNN(in_channels=hparams["data"]["window_size"],
+                       hidden_channels=hparams["model"]["hidden_channels"],
+                       num_hidden=hparams["model"]["num_layers"],
+                       param_sharing=hparams["model"]["param_sharing"],
+                       step_size=hparams["model"]["graff_step_size"],
+                       edge_weights=edge_weights
+                       )
     raise ValueError("unknown model architecture", model_arch)
 
 

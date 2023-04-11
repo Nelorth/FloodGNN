@@ -7,16 +7,18 @@ from torch_geometric.nn import GCNConv, GCN2Conv, Linear
 
 # functionality: encoder/decoder, evolution tracking, IPU loss return
 class BaseModel(Module, ABC):
-    def __init__(self, in_channels, hidden_channels):
+    def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_weights):
         super().__init__()
         self.encoder = Linear(in_channels, hidden_channels, weight_initializer="glorot")
         self.decoder = Linear(hidden_channels, 1, weight_initializer="glorot")
+        if param_sharing:
+            self.layers = ModuleList(num_hidden * [layer_gen()])
+        else:
+            self.layers = ModuleList([layer_gen() for _ in range(num_hidden)])
+        self.edge_weights = edge_weights
         self.evolution = None  # for tracking hidden layer activations
 
     def forward(self, x, edge_index, y=None, evo_tracking=False):
-        if self.layers is None:
-            raise ValueError("self.layers is undefined")
-
         if self.edge_weights is not None:
             num_graphs = edge_index.size(1) // len(self.edge_weights)
             edge_weights = self.edge_weights.clamp(min=1e-10).repeat(num_graphs).to(x.device)
@@ -42,52 +44,45 @@ class BaseModel(Module, ABC):
         pass
 
 
-class FloodMLP(BaseModel):
-    def __init__(self, in_channels, hidden_channels, num_hidden, residual):
-        super().__init__(in_channels, hidden_channels)
-        self.residual = residual
-        self.edge_weights = None
-        self.layers = ModuleList([Linear(hidden_channels, hidden_channels, weight_initializer="glorot")
-                                  for _ in range(num_hidden)])
+class MLP(BaseModel):
+    def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing):
+        layer_gen = lambda: Linear(hidden_channels, hidden_channels, weight_initializer="glorot")
+        super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, None)
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
-        return relu(layer(x)) + (x if self.residual else 0)
+        return relu(layer(x))
 
 
-class FloodGCN(BaseModel):
-    def __init__(self, in_channels, hidden_channels, num_hidden, residual, edge_weights):
-        super().__init__(in_channels, hidden_channels)
-        self.residual = residual
-        self.edge_weights = edge_weights
-        self.layers = ModuleList([GCNConv(hidden_channels, hidden_channels, add_self_loops=False, cached=True)
-                                  for _ in range(num_hidden)])
+class GCN(BaseModel):
+    def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, edge_weights):
+        layer_gen = lambda: GCNConv(hidden_channels, hidden_channels, add_self_loops=False, cached=True)
+        super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_weights)
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
-        return relu(layer(x, edge_index, edge_weights)) + (x if self.residual else 0)
+        return relu(layer(x, edge_index, edge_weights))
 
 
-class FloodGCNII(BaseModel):
-    def __init__(self, in_channels, hidden_channels, num_hidden, edge_weights):
-        super().__init__(in_channels, hidden_channels)
-        self.edge_weights = edge_weights
-        self.layers = ModuleList([GCN2Conv(hidden_channels, alpha=0.5, add_self_loops=False, cached=True)
-                                  for _ in range(num_hidden)])
+class ResGCN(GCN):
+    def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, edge_weights):
+        super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, edge_weights)
+
+    def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
+        return x + super().apply_layer(layer, x, x_0, edge_index, edge_weights)
+
+
+class GCNII(BaseModel):
+    def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, edge_weights):
+        layer_gen = GCN2Conv(hidden_channels, alpha=0.5, add_self_loops=False, cached=True)
+        super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_weights)
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
         return relu(layer(x, x_0, edge_index, edge_weights))
 
 
-class FloodGRAFFNN(BaseModel):
-    def __init__(self, in_channels, hidden_channels, num_hidden, shared_weights, step_size, edge_weights):
-        super().__init__(in_channels, hidden_channels)
-        self.edge_weights = edge_weights
-        if shared_weights:
-            self.layers = ModuleList(num_hidden * [GRAFFConv(channels=hidden_channels, step_size=step_size,
-                                                             add_self_loops=False, cached=True)])
-        else:
-            self.layers = ModuleList([GRAFFConv(channels=hidden_channels, step_size=step_size,
-                                                add_self_loops=False, cached=True)
-                                      for _ in range(num_hidden)])
+class GRAFFNN(BaseModel):
+    def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, step_size, edge_weights):
+        layer_gen = lambda: GRAFFConv(channels=hidden_channels, step_size=step_size, add_self_loops=False, cached=True)
+        super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_weights)
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
         return layer(x, x_0, edge_index, edge_weights)  # GRAFFConv already includes non-linearity
