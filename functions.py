@@ -164,7 +164,7 @@ def evaluate(model, dataset, on_ipu=False):
     if on_ipu:
         device = "ipu"
         model = poptorch.inferenceModel(model)
-        model(dataset[0].x, dataset[0].edge_index)
+        model.compile(dataset[0].x, dataset[0].edge_index)
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
