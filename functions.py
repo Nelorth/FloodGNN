@@ -10,6 +10,7 @@ from datetime import datetime
 from matplotlib.ticker import MaxNLocator
 from models import MLP, GCN, ResGCN, GCNII, GRAFFNN
 from torch.nn.functional import mse_loss
+from torch.utils.data import random_split
 from torch_geometric.loader import DataLoader
 from torchinfo import summary
 from tqdm import tqdm
@@ -41,7 +42,9 @@ def init_edge_weights(adjacency_type, edge_attr):
         raise ValueError("invalid adjacency type", adjacency_type)
 
 
-def construct_model(hparams, edge_weights):
+def construct_model(hparams, dataset):
+    ensure_reproducibility(hparams["training"]["random_seed"])
+    edge_weights = init_edge_weights(hparams["model"]["adjacency_type"], dataset.edge_attr)
     model_arch = hparams["model"]["architecture"]
     if model_arch == "MLP":
         return MLP(in_channels=hparams["data"]["window_size"],
@@ -104,10 +107,14 @@ def val_step(model, val_loader, device):
     return val_loss
 
 
-def train(model, train_dataset, val_dataset, hparams, on_ipu=False):
+def train(model, dataset, hparams, on_ipu=False, save_dir="runs/"):
+    ensure_reproducibility(hparams["training"]["random_seed"])
+
     print(summary(model, depth=2))
-    train_loader = DataLoader(train_dataset, batch_size=hparams["training"]["batch_size"], shuffle=True,
-                              drop_last=on_ipu)
+
+    val_split = hparams["training"]["val_split"]
+    train_dataset, val_dataset = random_split(dataset, [val_split, 1 - val_split])
+    train_loader = DataLoader(train_dataset, batch_size=hparams["training"]["batch_size"], shuffle=True, drop_last=on_ipu)
     val_loader = DataLoader(val_dataset, batch_size=hparams["training"]["batch_size"], shuffle=False, drop_last=on_ipu)
 
     if on_ipu:
@@ -147,7 +154,7 @@ def train(model, train_dataset, val_dataset, hparams, on_ipu=False):
     torch.save({
         "history": history,
         "hparams": hparams
-    }, datetime.now().strftime("runs/%Y-%m-%d_%H-%M-%S.run"))
+    }, datetime.now().strftime(save_dir + "%Y-%m-%d_%H-%M-%S.run"))
     return history
 
 
