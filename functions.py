@@ -65,7 +65,7 @@ def construct_model(hparams, edge_weights):
                             num_hidden=hparams["model"]["num_layers"],
                             edge_weights=edge_weights,
                             shared_weights=hparams["model"]["shared_weights"],
-                            step_size=hparams["model"]["step_size"])
+                            step_size=hparams["model"]["graff_step_size"])
     raise ValueError("unknown model architecture", model_arch)
 
 
