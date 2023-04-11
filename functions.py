@@ -7,6 +7,7 @@ import random
 import torch
 import torch.nn as nn
 
+from dataset import LamaHDataset
 from datetime import datetime
 from matplotlib.ticker import MaxNLocator
 from models import MLP, GCN, ResGCN, GCNII, GRAFFNN
@@ -81,6 +82,17 @@ def construct_model(hparams, dataset):
     raise ValueError("unknown model architecture", model_arch)
 
 
+def load_dataset(years, hparams):
+    return LamaHDataset("LamaH-CE",
+                        years=years,
+                        window_size=hparams["data"]["window_size"],
+                        stride_length=hparams["data"]["stride_length"],
+                        lead_time=hparams["data"]["lead_time"],
+                        edge_direction=hparams["data"]["edge_direction"],
+                        self_loops=hparams["data"]["self_loops"],
+                        normalized=hparams["data"]["normalized"])
+
+
 def train_step(model, train_loader, optimizer, device):
     model.train()
     train_loss = 0
@@ -115,7 +127,8 @@ def train(model, dataset, hparams, save_dir="runs/", on_ipu=False):
 
     holdout_size = hparams["training"]["holdout_size"]
     train_dataset, val_dataset = random_split(dataset, [1 - holdout_size, holdout_size])
-    train_loader = DataLoader(train_dataset, batch_size=hparams["training"]["batch_size"], shuffle=True, drop_last=on_ipu)
+    train_loader = DataLoader(train_dataset, batch_size=hparams["training"]["batch_size"], shuffle=True,
+                              drop_last=on_ipu)
     val_loader = DataLoader(val_dataset, batch_size=hparams["training"]["batch_size"], shuffle=False, drop_last=on_ipu)
 
     if on_ipu:
@@ -202,3 +215,5 @@ def plot_loss(train_loss, val_loss):
     plt.ylim(0, 1)
     plt.legend()
     plt.show()
+    best_epoch = torch.tensor(val_loss).argmin()
+    print(f"[Epoch {best_epoch + 1}] Train: {train_loss[best_epoch]:.4f} | Val: {val_loss[best_epoch]:.4f}")
