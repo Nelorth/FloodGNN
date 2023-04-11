@@ -45,24 +45,24 @@ def construct_model(hparams, edge_weights):
     model_arch = hparams["model"]["architecture"]
     if model_arch == "MLP":
         return FloodMLP(in_channels=hparams["data"]["window_size"],
-                        hidden_channels=hparams["model"]["hidden_size"],
-                        num_hidden=hparams["model"]["propagation_dist"],
+                        hidden_channels=hparams["model"]["hidden_channels"],
+                        num_hidden=hparams["model"]["num_layers"],
                         residual=hparams["model"]["residual"])
     elif model_arch == "GCN":
         return FloodGCN(in_channels=hparams["data"]["window_size"],
-                        hidden_channels=hparams["model"]["hidden_size"],
-                        num_hidden=hparams["model"]["propagation_dist"],
+                        hidden_channels=hparams["model"]["hidden_channels"],
+                        num_hidden=hparams["model"]["num_layers"],
                         residual=hparams["model"]["residual"],
                         edge_weights=edge_weights)
     elif model_arch == "GCNII":
         return FloodGCNII(in_channels=hparams["data"]["window_size"],
-                          hidden_channels=hparams["model"]["hidden_size"],
-                          num_hidden=hparams["model"]["propagation_dist"],
+                          hidden_channels=hparams["model"]["hidden_channels"],
+                          num_hidden=hparams["model"]["num_layers"],
                           edge_weights=edge_weights)
     elif model_arch == "GRAFFNN":
         return FloodGRAFFNN(in_channels=hparams["data"]["window_size"],
-                            hidden_channels=hparams["model"]["hidden_size"],
-                            num_hidden=hparams["model"]["propagation_dist"],
+                            hidden_channels=hparams["model"]["hidden_channels"],
+                            num_hidden=hparams["model"]["num_layers"],
                             edge_weights=edge_weights,
                             shared_weights=hparams["model"]["shared_weights"],
                             step_size=hparams["model"]["step_size"])
