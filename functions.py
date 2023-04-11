@@ -152,12 +152,11 @@ def train(model, dataset, hparams, save_dir="runs/", on_ipu=False):
     if on_ipu:
         model.detachFromDevice()
 
-    save_path = datetime.now().strftime(save_dir + "%Y-%m-%d_%H-%M-%S.run")
-    os.makedirs(save_path, exist_ok=True)
+    os.makedirs(save_dir, exist_ok=True)
     torch.save({
         "history": history,
         "hparams": hparams
-    }, save_path)
+    }, datetime.now().strftime(save_dir + "%Y-%m-%d_%H-%M-%S.run"))
     return history
 
 
