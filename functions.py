@@ -165,6 +165,8 @@ def train(model, dataset, hparams, save_dir="runs/", on_ipu=False):
     if on_ipu:
         model.detachFromDevice()
 
+    if not save_dir.endswith("/"):
+        save_dir = save_dir + "/"
     os.makedirs(save_dir, exist_ok=True)
     torch.save({
         "history": history,
