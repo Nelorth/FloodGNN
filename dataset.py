@@ -85,8 +85,6 @@ class LamaHDataset(Dataset):
                 filter(lambda t: t.name.startswith(tuple(self.raw_file_names)), archive.getmembers())))
 
     def process(self):
-        print(f"Preprocessing LamaH-CE to {self.processed_paths[0]}...")
-
         stream_dist = pd.read_csv(f"{self.raw_dir}/{self.raw_file_names[0]}/Stream_dist.csv", sep=";")
         stream_dist.drop(columns="strm_slope", inplace=True)  # will re-calculate from dist_hdn and elev_diff
 
@@ -98,7 +96,7 @@ class LamaHDataset(Dataset):
                 return {id}.union(*(collect_upstream(pred) for pred in predecessors))
 
         connected_gauges = set(stream_dist["ID"]).union(stream_dist["NEXTDOWNID"])
-        danube_gauges = set(collect_upstream(399))  # 399 is most downstream Danube gauge, use 373 if more years wanted
+        danube_gauges = set(collect_upstream(399))  # 399 is most downstream Danube gauge
         assert danube_gauges.issubset(connected_gauges)
 
         feasible_gauges = set()
@@ -107,14 +105,13 @@ class LamaHDataset(Dataset):
             ts = pd.read_csv(f"{self.raw_dir}/{self.raw_file_names[1]}/hourly/ID_{gauge_id}.csv",
                              sep=";", usecols=["YYYY", "MM", "DD", "hh", "mm", "qobs"])
             if (ts["qobs"] >= 0).all():
-                if ts.iloc[0]["YYYY"] <= 2000:
-                    sub_ts = ts[ts["YYYY"] >= 2000]
-                    if len(sub_ts) == (18 * 365 + 5) * 24:  # number of hours in 2000-2017
-                        feasible_gauges.add(gauge_id)
-                        qobs_statistics.loc[gauge_id] = [ts["qobs"].mean(), ts["qobs"].std(),
-                                                         ts["qobs"].min(), ts["qobs"].median(), ts["qobs"].max()]
-                        assert tuple(sub_ts.iloc[0, :5]) == (2000, 1, 1, 0, 0) \
-                               and tuple(sub_ts.iloc[-1, :5]) == (2017, 12, 31, 23, 0)
+                sub_ts = ts[(ts["YYYY"] >= 2000) & (ts["YYYY"] <= 2017)]
+                if len(sub_ts) == (18 * 365 + 5) * 24:  # number of hours in 2000-2017
+                    feasible_gauges.add(gauge_id)
+                    qobs_statistics.loc[gauge_id] = [ts["qobs"].mean(), ts["qobs"].std(),
+                                                     ts["qobs"].min(), ts["qobs"].median(), ts["qobs"].max()]
+                    assert tuple(sub_ts.iloc[0, :5]) == (2000, 1, 1, 0, 0) \
+                           and tuple(sub_ts.iloc[-1, :5]) == (2017, 12, 31, 23, 0)
         print("Determined", len(feasible_gauges), "feasible gauges.")
         assert 399 in feasible_gauges
 
@@ -134,12 +131,12 @@ class LamaHDataset(Dataset):
 
             stream_dist.reset_index()
 
-        print("Saving final adjacency list to disk...")
+        print("Saving final adjacency list to", self.processed_paths[0])
         stream_dist["strm_slope"] = stream_dist["elev_diff"] / stream_dist["dist_hdn"]
         stream_dist.sort_values(by="ID", inplace=True)
         stream_dist.to_csv(self.processed_paths[0], index=False)
 
-        print("Saving discharge summary statistics to disk...")
+        print("Saving discharge summary statistics to", self.processed_paths[1], end="\n\n")
         qobs_statistics.to_csv(self.processed_paths[1], index=True)
 
     def len(self):
