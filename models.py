@@ -55,7 +55,7 @@ class MLP(BaseModel):
 
 class GCN(BaseModel):
     def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, edge_weights):
-        layer_gen = lambda: GCNConv(hidden_channels, hidden_channels, add_self_loops=False, cached=True)
+        layer_gen = lambda: GCNConv(hidden_channels, hidden_channels, add_self_loops=False)
         super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_weights)
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
@@ -72,7 +72,7 @@ class ResGCN(GCN):
 
 class GCNII(BaseModel):
     def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, edge_weights):
-        layer_gen = GCN2Conv(hidden_channels, alpha=0.5, add_self_loops=False, cached=True)
+        layer_gen = GCN2Conv(hidden_channels, alpha=0.5, add_self_loops=False)
         super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_weights)
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
@@ -81,7 +81,7 @@ class GCNII(BaseModel):
 
 class GRAFFNN(BaseModel):
     def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, step_size, edge_weights):
-        layer_gen = lambda: GRAFFConv(channels=hidden_channels, step_size=step_size, add_self_loops=False, cached=True)
+        layer_gen = lambda: GRAFFConv(channels=hidden_channels, step_size=step_size, add_self_loops=False)
         super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_weights)
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):

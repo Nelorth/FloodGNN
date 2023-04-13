@@ -82,7 +82,13 @@ def construct_model(hparams, dataset):
     raise ValueError("unknown model architecture", model_arch)
 
 
-def load_dataset(years, hparams):
+def load_dataset(hparams, split):
+    if split == "train":
+        years = range(2000, 2016)
+    elif split == "test":
+        years = [2016, 2017]
+    else:
+        raise ValueError("unknown split", split)
     return LamaHDataset("LamaH-CE",
                         years=years,
                         window_size=hparams["data"]["window_size"],
