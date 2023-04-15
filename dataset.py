@@ -1,4 +1,3 @@
-import itertools
 import pandas as pd
 import tarfile
 import torch
@@ -7,14 +6,6 @@ import urllib.request
 from torch_geometric.data import Data, Dataset
 from torch_geometric.utils import add_self_loops, to_undirected
 from tqdm import tqdm
-
-
-# manual impl as long as Colab hasn't updated to Python 3.10
-def pairwise(iterable):
-    # pairwise('ABCDEFG') --> AB BC CD DE EF FG
-    a, b = itertools.tee(iterable)
-    next(b, None)
-    return zip(a, b)
 
 
 class LamaHDataset(Dataset):
@@ -41,7 +32,6 @@ class LamaHDataset(Dataset):
         self.edge_index = torch.tensor(edge_cols.values.transpose(), dtype=torch.long)
         weight_cols = adjacency[["dist_hdn", "elev_diff", "strm_slope"]]
         self.edge_attr = torch.tensor(weight_cols.values, dtype=torch.float)
-
         if self_loops:
             self.edge_index, self.edge_attr = add_self_loops(self.edge_index, self.edge_attr, fill_value="mean")
 
@@ -153,11 +143,6 @@ class LamaHDataset(Dataset):
 
     def denormalize(self, x):
         return self.std * x + self.mean
-
-    def subsample_years(self, years):
-        # TODO switch to itertools.pairwise once Colab on Python 3.10
-        year_boundaries = dict(zip(self.years, pairwise(itertools.accumulate(self.year_sizes, initial=0))))
-        return self.index_select(list(itertools.chain.from_iterable(range(*year_boundaries[y]) for y in years)))
 
     def _decode_index(self, idx):
         for i, size in enumerate(self.year_sizes):
