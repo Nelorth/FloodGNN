@@ -32,11 +32,11 @@ def init_edge_weights(adjacency_type, edge_attr):
         return torch.zeros(edge_attr.size(0))
     elif adjacency_type == "binary":
         return torch.ones(edge_attr.size(0))
-    elif adjacency_type == "dist_hdn":
+    elif adjacency_type == "stream_length":
         return edge_attr[:, 0]
-    elif adjacency_type == "elev_diff":
+    elif adjacency_type == "elevation_difference":
         return edge_attr[:, 1]
-    elif adjacency_type == "strm_slope":
+    elif adjacency_type == "average_slope":
         return edge_attr[:, 2]
     elif adjacency_type == "learned":
         return nn.Parameter(1.5 * torch.rand(edge_attr.size(0)) + 0.5)
@@ -133,8 +133,7 @@ def train(model, dataset, hparams, save_dir="runs/", on_ipu=False):
 
     holdout_size = hparams["training"]["holdout_size"]
     train_dataset, val_dataset = random_split(dataset, [1 - holdout_size, holdout_size])
-    train_loader = DataLoader(train_dataset, batch_size=hparams["training"]["batch_size"], shuffle=True,
-                              drop_last=on_ipu)
+    train_loader = DataLoader(train_dataset, batch_size=hparams["training"]["batch_size"], shuffle=True, drop_last=on_ipu)
     val_loader = DataLoader(val_dataset, batch_size=hparams["training"]["batch_size"], shuffle=False, drop_last=on_ipu)
 
     if on_ipu:
