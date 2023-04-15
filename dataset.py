@@ -38,7 +38,7 @@ class LamaHDataset(Dataset):
         if edge_direction == "upstream":
             self.edge_index = self.edge_index[[1, 0]]
         elif edge_direction == "bidirectional":
-            self.edge_index, self.edge_attr = to_undirected(self.edge_index, self.edge_attr, reduce="mean")
+            self.edge_index, self.edge_attr = to_undirected(self.edge_index, self.edge_attr)
         elif edge_direction != "downstream":
             raise ValueError("unknown edge direction", edge_direction)
 
