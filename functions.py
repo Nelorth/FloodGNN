@@ -45,7 +45,7 @@ def init_edge_weights(adjacency_type, edge_attr):
 
 
 def construct_model(hparams, dataset):
-    ensure_reproducibility(hparams["training"]["random_seed"])
+    # ensure_reproducibility(hparams["training"]["random_seed"])
     edge_weights = init_edge_weights(hparams["model"]["adjacency_type"], dataset.edge_attr)
     model_arch = hparams["model"]["architecture"]
     if model_arch == "MLP":
@@ -126,7 +126,7 @@ def val_step(model, val_loader, device):
 
 
 def train(model, dataset, hparams, save_dir="runs/", on_ipu=False):
-    ensure_reproducibility(hparams["training"]["random_seed"])
+    #ensure_reproducibility(hparams["training"]["random_seed"])
 
     print(summary(model, depth=2))
 
