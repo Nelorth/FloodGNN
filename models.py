@@ -74,7 +74,7 @@ class ResGCN(GCN):
 
 class GCNII(BaseModel):
     def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, edge_weights):
-        layer_gen = GCN2Conv(hidden_channels, alpha=0.5, add_self_loops=False)
+        layer_gen = lambda: GCN2Conv(hidden_channels, alpha=0.5, add_self_loops=False)
         super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_weights)
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
