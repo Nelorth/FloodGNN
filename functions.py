@@ -95,7 +95,6 @@ def load_dataset(hparams, split):
                         stride_length=hparams["data"]["stride_length"],
                         lead_time=hparams["data"]["lead_time"],
                         edge_direction=hparams["data"]["edge_direction"],
-                        self_loops=hparams["data"]["self_loops"],
                         normalized=hparams["data"]["normalized"])
 
 
@@ -133,7 +132,8 @@ def train(model, dataset, hparams, save_dir="runs/", on_ipu=False):
 
     holdout_size = hparams["training"]["holdout_size"]
     train_dataset, val_dataset = random_split(dataset, [1 - holdout_size, holdout_size])
-    train_loader = DataLoader(train_dataset, batch_size=hparams["training"]["batch_size"], shuffle=True, drop_last=on_ipu)
+    train_loader = DataLoader(train_dataset, batch_size=hparams["training"]["batch_size"], shuffle=True,
+                              drop_last=on_ipu)
     val_loader = DataLoader(val_dataset, batch_size=hparams["training"]["batch_size"], shuffle=False, drop_last=on_ipu)
 
     if on_ipu:
