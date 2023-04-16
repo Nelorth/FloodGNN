@@ -21,7 +21,7 @@ class BaseModel(Module, ABC):
     def forward(self, x, edge_index, y=None, evo_tracking=False):
         if self.edge_weights is not None:
             num_graphs = edge_index.size(1) // len(self.edge_weights)
-            edge_weights = self.edge_weights.clamp(min=1e-10).repeat(num_graphs).to(x.device)
+            edge_weights = self.edge_weights.repeat(num_graphs).to(x.device)
         else:
             edge_weights = None
 
