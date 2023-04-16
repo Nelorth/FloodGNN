@@ -3,6 +3,7 @@ from graff_conv import GRAFFConv
 from torch.nn import Module, ModuleList
 from torch.nn.functional import mse_loss, relu
 from torch_geometric.nn import GCNConv, GCN2Conv, Linear
+from torch_geometric.utils import add_self_loops
 
 
 # functionality: encoder/decoder, evolution tracking, IPU loss return
@@ -24,6 +25,9 @@ class BaseModel(Module, ABC):
             edge_weights = self.edge_weights.repeat(num_graphs).to(x.device)
         else:
             edge_weights = None
+
+        edge_index, edge_weights = add_self_loops(edge_index, edge_weights, fill_value="mean", num_nodes=x.size(0))
+        print(edge_index.shape, edge_weights.shape)
 
         x_0 = self.encoder(x)
         self.evolution = [x_0] if evo_tracking else None
