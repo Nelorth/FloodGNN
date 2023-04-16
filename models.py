@@ -25,9 +25,7 @@ class BaseModel(Module, ABC):
             edge_weights = self.edge_weights.repeat(num_graphs).to(x.device)
         else:
             edge_weights = None
-
         edge_index, edge_weights = add_self_loops(edge_index, edge_weights, fill_value="mean", num_nodes=x.size(0))
-        print(edge_index.shape, edge_weights.shape)
 
         x_0 = self.encoder(x)
         self.evolution = [x_0] if evo_tracking else None
