@@ -4,7 +4,7 @@ import torch
 import urllib.request
 
 from torch_geometric.data import Data, Dataset
-from torch_geometric.utils import add_self_loops, to_undirected
+from torch_geometric.utils import to_undirected
 from tqdm import tqdm
 
 
@@ -12,14 +12,13 @@ class LamaHDataset(Dataset):
     DATA_URL = "https://zenodo.org/record/5153305/files/1_LamaH-CE_daily_hourly.tar.gz"
 
     def __init__(self, root, years=range(2000, 2018), window_size=24, stride_length=1, lead_time=1,
-                 edge_direction="downstream", self_loops=False, normalized=False):
+                 edge_direction="downstream", normalized=False):
         super().__init__(root)  # calls download() and process() if necessary
 
         self.window_size_hrs = window_size
         self.stride_length_hrs = stride_length
         self.lead_time_hrs = lead_time
         self.edge_direction = edge_direction
-        self.self_loops = self_loops
         self.normalized = normalized
         self.years = years
         self.year_sizes = [(24 * (365 + int(year % 4 == 0)) - (window_size + lead_time)) // stride_length + 1
@@ -32,8 +31,6 @@ class LamaHDataset(Dataset):
         self.edge_index = torch.tensor(edge_cols.values.transpose(), dtype=torch.long)
         weight_cols = adjacency[["dist_hdn", "elev_diff", "strm_slope"]]
         self.edge_attr = torch.tensor(weight_cols.values, dtype=torch.float)
-        if self_loops:
-            self.edge_index, self.edge_attr = add_self_loops(self.edge_index, self.edge_attr, fill_value="mean")
 
         if edge_direction == "upstream":
             self.edge_index = self.edge_index[[1, 0]]
