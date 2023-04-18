@@ -14,6 +14,7 @@ from models import MLP, GCN, ResGCN, GCNII, GRAFFNN
 from torch.nn.functional import mse_loss
 from torch.utils.data import random_split
 from torch_geometric.loader import DataLoader
+from torch_geometric.utils import get_laplacian, to_dense_adj, to_undirected
 from torchinfo import summary
 from tqdm import tqdm
 
@@ -126,7 +127,7 @@ def val_step(model, val_loader, device):
 
 
 def train(model, dataset, hparams, save_dir="runs/", on_ipu=False):
-    #ensure_reproducibility(hparams["training"]["random_seed"])
+    # ensure_reproducibility(hparams["training"]["random_seed"])
 
     print(summary(model, depth=2))
 
@@ -180,6 +181,14 @@ def train(model, dataset, hparams, save_dir="runs/", on_ipu=False):
     return history
 
 
+def compile_ipu_model(model, loader):
+    data = loader.dataset[0]
+    fake_x = data.x.repeat(loader.batch_size, 1)
+    fake_y = data.y.repeat(loader.batch_size, 1)
+    fake_idx = data.edge_index.repeat(1, loader.batch_size)
+    model.compile(fake_x, fake_idx, fake_y)
+
+
 def evaluate(model, dataset, on_ipu=False):
     if on_ipu:
         device = "ipu"
@@ -204,12 +213,11 @@ def evaluate(model, dataset, on_ipu=False):
     return node_mses, nose_nses
 
 
-def compile_ipu_model(model, loader):
-    data = loader.dataset[0]
-    fake_x = data.x.repeat(loader.batch_size, 1)
-    fake_y = data.y.repeat(loader.batch_size, 1)
-    fake_idx = data.edge_index.repeat(1, loader.batch_size)
-    model.compile(fake_x, fake_idx, fake_y)
+def dirichlet_energy(x, edge_index, edge_weight):
+    edge_index, edge_weight = to_undirected(edge_index, edge_weight)
+    edge_index, edge_weight = get_laplacian(edge_index, edge_weight)
+    laplacian = to_dense_adj(edge_index=edge_index, edge_attr=edge_weight)[0]
+    return x.T @ laplacian @ x
 
 
 def plot_loss(train_loss, val_loss):
