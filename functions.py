@@ -217,7 +217,7 @@ def dirichlet_energy(x, edge_index, edge_weight):
     edge_index, edge_weight = to_undirected(edge_index, edge_weight)
     edge_index, edge_weight = get_laplacian(edge_index, edge_weight)
     laplacian = to_dense_adj(edge_index=edge_index, edge_attr=edge_weight)[0]
-    return x.T @ laplacian @ x
+    return torch.trace(x.T @ laplacian @ x)
 
 
 def plot_loss(train_loss, val_loss):

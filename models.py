@@ -31,13 +31,13 @@ class BaseModel(Module, ABC):
                                                   num_nodes=x.size(0))
 
         x_0 = self.encoder(x)
-        self.evolution = [x_0] if evo_tracking else None
+        self.evolution = [x_0.detach()] if evo_tracking else None
 
         x = x_0
         for layer in self.layers:
             x = self.apply_layer(layer, x, x_0, edge_index, edge_weights)
             if evo_tracking:
-                self.evolution.append(x)
+                self.evolution.append(x.detach())
         x = self.decoder(x)
 
         if y is not None:  # IPU paradigm demands that models return the loss as 2nd output
