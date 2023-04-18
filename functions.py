@@ -213,9 +213,9 @@ def evaluate(model, dataset, on_ipu=False):
     return node_mses, nose_nses
 
 
-def dirichlet_energy(x, edge_index, edge_weight):
+def dirichlet_energy(x, edge_index, edge_weight, normalization=None):
     edge_index, edge_weight = to_undirected(edge_index, edge_weight)
-    edge_index, edge_weight = get_laplacian(edge_index, edge_weight)
+    edge_index, edge_weight = get_laplacian(edge_index, edge_weight, normalization=normalization)
     laplacian = to_dense_adj(edge_index=edge_index, edge_attr=edge_weight)[0]
     return torch.trace(x.T @ laplacian @ x)
 
