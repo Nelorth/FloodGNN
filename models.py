@@ -24,11 +24,11 @@ class BaseModel(Module, ABC):
         if self.edge_weights is not None:
             num_graphs = edge_index.size(1) // len(self.edge_weights)
             edge_weights = self.edge_weights.repeat(num_graphs).to(x.device)
-            edge_weights = edge_weights.clamp(min=0)
+            edge_weights = edge_weights.clamp(min=0)  # relevant when edge weights are learned
         else:
             edge_weights = None
         edge_index, edge_weights = add_self_loops(edge_index, edge_weights, fill_value=self.loop_fill_value,
-                                                  num_nodes=x.size(0))
+                                                  num_nodes=x.size(0))  # must be specified for IPUs
 
         x_0 = self.encoder(x)
         self.evolution = [x_0.detach()] if evo_tracking else None
