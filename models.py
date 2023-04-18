@@ -18,13 +18,13 @@ class BaseModel(Module, ABC):
             self.layers = ModuleList([layer_gen() for _ in range(num_hidden)])
         self.edge_weights = edge_weights
         self.loop_fill_value = 1.0 if (self.edge_weights == 0).all() else "mean"
-        print("self_loop_fill_value:", self.loop_fill_value)
         self.evolution = None  # for tracking hidden layer activations
 
     def forward(self, x, edge_index, y=None, evo_tracking=False):
         if self.edge_weights is not None:
             num_graphs = edge_index.size(1) // len(self.edge_weights)
             edge_weights = self.edge_weights.repeat(num_graphs).to(x.device)
+            edge_weights = edge_weights.clamp(min=0)
         else:
             edge_weights = None
         edge_index, edge_weights = add_self_loops(edge_index, edge_weights, fill_value=self.loop_fill_value,

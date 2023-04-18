@@ -40,7 +40,7 @@ def init_edge_weights(adjacency_type, edge_attr):
     elif adjacency_type == "average_slope":
         return edge_attr[:, 2]
     elif adjacency_type == "learned":
-        return nn.Parameter(1.5 * torch.rand(edge_attr.size(0)) + 0.5)
+        return nn.Parameter(torch.nn.init.uniform_(torch.empty(edge_attr.size(0)), 0.9, 1.1))
     else:
         raise ValueError("invalid adjacency type", adjacency_type)
 
