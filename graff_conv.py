@@ -35,14 +35,12 @@ class GRAFFConv(MessagePassing):
         self.normalize = normalize
         self.internal_mixer = SymmetricLinear(channels)
         self.external_mixer = SymmetricLinear(channels)
-        self.initial_mixer = SymmetricLinear(channels)
         self.reset_parameters()
 
     def reset_parameters(self):
         super().reset_parameters()
         self.internal_mixer.reset_parameters()
         self.external_mixer.reset_parameters()
-        self.initial_mixer.reset_parameters()
         self._cached_edge_index = None
         self._cached_adj_t = None
 
@@ -72,8 +70,7 @@ class GRAFFConv(MessagePassing):
 
         internal_repr = self.propagate(edge_index, x=self.internal_mixer(x), edge_weight=edge_weight)
         external_repr = self.external_mixer(x)
-        initial_repr = self.initial_mixer(x_0)
-        return x + self.step_size * self.act(internal_repr - external_repr - initial_repr)
+        return x + self.step_size * self.act(internal_repr - external_repr)
 
     def message(self, x_j: Tensor, edge_weight: OptTensor) -> Tensor:
         return x_j if edge_weight is None else edge_weight.view(-1, 1) * x_j
