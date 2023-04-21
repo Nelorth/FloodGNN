@@ -14,7 +14,8 @@ from models import MLP, GCN, ResGCN, GCNII, GRAFFNN
 from torch.nn.functional import mse_loss
 from torch.utils.data import random_split
 from torch_geometric.loader import DataLoader
-from torch_geometric.utils import get_laplacian, to_dense_adj, to_undirected
+from torch_geometric.utils import get_laplacian, to_dense_adj, to_undirected, to_torch_coo_tensor
+
 from torchinfo import summary
 from tqdm import tqdm
 
@@ -28,7 +29,7 @@ def ensure_reproducibility(seed):
     torch.backends.cudnn.benchmark = False
 
 
-def init_edge_weights(adjacency_type, edge_attr):
+def get_edge_weights(adjacency_type, edge_attr):
     if adjacency_type == "isolated":
         return torch.zeros(edge_attr.size(0))
     elif adjacency_type == "binary":
@@ -47,7 +48,7 @@ def init_edge_weights(adjacency_type, edge_attr):
 
 def construct_model(hparams, dataset):
     # ensure_reproducibility(hparams["training"]["random_seed"])
-    edge_weights = init_edge_weights(hparams["model"]["adjacency_type"], dataset.edge_attr)
+    edge_weights = get_edge_weights(hparams["model"]["adjacency_type"], dataset.edge_attr)
     model_arch = hparams["model"]["architecture"]
     if model_arch == "MLP":
         return MLP(in_channels=hparams["data"]["window_size"],
@@ -97,6 +98,15 @@ def load_dataset(hparams, split):
                         lead_time=hparams["data"]["lead_time"],
                         edge_direction=hparams["data"]["edge_direction"],
                         normalized=hparams["data"]["normalized"])
+
+
+def load_model_and_dataset(chkpt):
+    best_epoch = torch.tensor(chkpt["history"]["val_loss"]).argmin()
+    model_params = chkpt["history"]["model_params"][best_epoch]
+    dataset = load_dataset(chkpt["hparams"], "test")
+    model = construct_model(chkpt["hparams"], dataset)
+    model.load_state_dict(model_params, strict=False)
+    return model, dataset
 
 
 def train_step(model, train_loader, optimizer, device):
@@ -189,7 +199,7 @@ def compile_ipu_model(model, loader):
     model.compile(fake_x, fake_idx, fake_y)
 
 
-def evaluate(model, dataset, on_ipu=False):
+def evaluate_mse_nse(model, dataset, on_ipu=False):
     if on_ipu:
         device = "ipu"
         model = poptorch.inferenceModel(model)
@@ -212,12 +222,47 @@ def evaluate(model, dataset, on_ipu=False):
     nose_nses = 1 - node_mses / dataset.std.square()
     return node_mses, nose_nses
 
+def evaluate_directory(chkpt_dir, eval_func, readout_func):
+    results = {}
+    for file in os.listdir(chkpt_dir):
+        try:
+            chkpt = torch.load(chkpt_dir + "/" + file)
+        except:
+            continue
+        model, dataset = load_model_and_dataset(chkpt)
+        results[readout_func(chkpt)] = eval_func(model, dataset)
+    return results
+
 
 def dirichlet_energy(x, edge_index, edge_weight, normalization=None):
     edge_index, edge_weight = to_undirected(edge_index, edge_weight)
     edge_index, edge_weight = get_laplacian(edge_index, edge_weight, normalization=normalization)
-    laplacian = to_dense_adj(edge_index=edge_index, edge_attr=edge_weight)[0]
-    return torch.trace(x.T @ laplacian @ x)
+    lap = to_torch_coo_tensor(edge_index=edge_index, edge_attr=edge_weight)
+    return 0.5 * torch.trace(torch.mm(x.T, torch.sparse.mm(lap, x)))
+
+
+def evaluate_dirichlet_energy(model, dataset, on_ipu=False):
+    if on_ipu:
+        device = "ipu"
+        model = poptorch.inferenceModel(model)
+        model.compile(dataset[0].x, dataset[0].edge_index, evo_tracking=True)
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+    model.eval()
+    dirichlet_stats = []
+    with torch.no_grad():
+        edge_weights = model.edge_weights.detach().nan_to_num()
+        for data in tqdm(dataset, desc="Testing"):
+            if device != "ipu":
+                data = data.to(device)
+            _, evo = model(data.x, data.edge_index, evo_tracking=True)
+            dir_energies = torch.tensor([dirichlet_energy(h, data.edge_index, edge_weights) for h in evo])
+            dirichlet_stats.append(dir_energies)
+    dirichlet_stats = torch.stack(dirichlet_stats)
+    if on_ipu:
+        model.detachFromDevice()
+    return dirichlet_stats
 
 
 def plot_loss(train_loss, val_loss):
