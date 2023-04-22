@@ -1,5 +1,4 @@
 import copy
-import matplotlib.pyplot as plt
 import numpy as np
 import os
 import poptorch
@@ -9,12 +8,11 @@ import torch.nn as nn
 
 from dataset import LamaHDataset
 from datetime import datetime
-from matplotlib.ticker import MaxNLocator
 from models import MLP, GCN, ResGCN, GCNII, GRAFFNN
 from torch.nn.functional import mse_loss
 from torch.utils.data import random_split
 from torch_geometric.loader import DataLoader
-from torch_geometric.utils import get_laplacian, to_dense_adj, to_undirected, to_torch_coo_tensor
+from torch_geometric.utils import get_laplacian, to_undirected, to_torch_coo_tensor
 
 from torchinfo import summary
 from tqdm import tqdm
@@ -47,7 +45,6 @@ def get_edge_weights(adjacency_type, edge_attr):
 
 
 def construct_model(hparams, dataset):
-    # ensure_reproducibility(hparams["training"]["random_seed"])
     edge_weights = get_edge_weights(hparams["model"]["adjacency_type"], dataset.edge_attr)
     model_arch = hparams["model"]["architecture"]
     if model_arch == "MLP":
@@ -60,18 +57,22 @@ def construct_model(hparams, dataset):
                    hidden_channels=hparams["model"]["hidden_channels"],
                    num_hidden=hparams["model"]["num_layers"],
                    param_sharing=hparams["model"]["param_sharing"],
-                   edge_weights=edge_weights)
+                   edge_orientation=hparams["model"]["edge_orientation"],
+                   edge_weights=edge_weights
+                   )
     elif model_arch == "ResGCN":
         return ResGCN(in_channels=hparams["data"]["window_size"],
                       hidden_channels=hparams["model"]["hidden_channels"],
                       num_hidden=hparams["model"]["num_layers"],
                       param_sharing=hparams["model"]["param_sharing"],
+                      edge_orientation=hparams["model"]["edge_orientation"],
                       edge_weights=edge_weights)
     elif model_arch == "GCNII":
         return GCNII(in_channels=hparams["data"]["window_size"],
                      hidden_channels=hparams["model"]["hidden_channels"],
                      num_hidden=hparams["model"]["num_layers"],
                      param_sharing=hparams["model"]["param_sharing"],
+                     edge_orientation=hparams["model"]["edge_orientation"],
                      edge_weights=edge_weights)
     elif model_arch == "GRAFFNN":
         return GRAFFNN(in_channels=hparams["data"]["window_size"],
@@ -79,6 +80,7 @@ def construct_model(hparams, dataset):
                        num_hidden=hparams["model"]["num_layers"],
                        param_sharing=hparams["model"]["param_sharing"],
                        step_size=hparams["model"]["graff_step_size"],
+                       edge_orientation=hparams["model"]["edge_orientation"],
                        edge_weights=edge_weights
                        )
     raise ValueError("unknown model architecture", model_arch)
@@ -96,7 +98,6 @@ def load_dataset(hparams, split):
                         window_size=hparams["data"]["window_size"],
                         stride_length=hparams["data"]["stride_length"],
                         lead_time=hparams["data"]["lead_time"],
-                        edge_direction=hparams["data"]["edge_direction"],
                         normalized=hparams["data"]["normalized"])
 
 
@@ -137,8 +138,6 @@ def val_step(model, val_loader, device):
 
 
 def train(model, dataset, hparams, save_dir="runs/", on_ipu=False):
-    # ensure_reproducibility(hparams["training"]["random_seed"])
-
     print(summary(model, depth=2))
 
     holdout_size = hparams["training"]["holdout_size"]
@@ -265,15 +264,10 @@ def evaluate_dirichlet_energy(model, dataset, on_ipu=False):
     return dirichlet_stats
 
 
-def plot_loss(train_loss, val_loss):
-    plt.figure()
-    plt.plot(train_loss, label="train")
-    plt.plot(val_loss, label="val")
-    plt.xlabel("epoch")
-    plt.ylabel("normalized MSE")
-    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
-    plt.ylim(0, 1)
-    plt.legend()
-    plt.show()
-    best_epoch = torch.tensor(val_loss).argmin()
-    print(f"[Epoch {best_epoch + 1}] Train: {train_loss[best_epoch]:.4f} | Val: {val_loss[best_epoch]:.4f}")
+def rolling_forecast(model, data, num_steps):
+    window = data.x
+    with torch.no_grad():
+        for i in range(num_steps):
+            pred = model(window[:, i:], data.edge_index)
+            window = torch.cat([window, pred], dim=1)
+    return window
