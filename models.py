@@ -30,13 +30,14 @@ class BaseModel(Module, ABC):
         else:
             edge_weights = torch.zeros(edge_index.size(1)).to(x.device)
 
-        if self.edge_orientation == "upstream":
-            edge_index = edge_index[[1, 0]].to(x.device)
-        elif self.edge_orientation == "bidirectional":
-            edge_index = torch.cat([edge_index, edge_index[[1, 0]]], dim=1).to(x.device)
-            edge_weights = edge_weights.repeat(2).to(x.device)
-        elif self.edge_orientation != "downstream":
-            raise ValueError("unknown edge direction", self.edge_orientation)
+        if self.edge_orientation is not None:
+            if self.edge_orientation == "upstream":
+                edge_index = edge_index[[1, 0]].to(x.device)
+            elif self.edge_orientation == "bidirectional":
+                edge_index = torch.cat([edge_index, edge_index[[1, 0]]], dim=1).to(x.device)
+                edge_weights = edge_weights.repeat(2).to(x.device)
+            elif self.edge_orientation != "downstream":
+                raise ValueError("unknown edge direction", self.edge_orientation)
         edge_index, edge_weights = add_self_loops(edge_index, edge_weights, fill_value=self.loop_fill_value,
                                                   num_nodes=x.size(0))  # must be specified for IPUs
 
@@ -73,7 +74,7 @@ class MLP(BaseModel):
 class GCN(BaseModel):
     def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, edge_orientation, edge_weights):
         layer_gen = lambda: GCNConv(hidden_channels, hidden_channels, add_self_loops=False)
-        super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_weights, edge_orientation)
+        super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_orientation, edge_weights)
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
         return relu(layer(x, edge_index, edge_weights))
@@ -81,7 +82,7 @@ class GCN(BaseModel):
 
 class ResGCN(GCN):
     def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, edge_orientation, edge_weights):
-        super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, edge_weights, edge_orientation)
+        super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, edge_orientation, edge_weights)
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
         return x + super().apply_layer(layer, x, x_0, edge_index, edge_weights)
@@ -90,7 +91,7 @@ class ResGCN(GCN):
 class GCNII(BaseModel):
     def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, edge_orientation, edge_weights):
         layer_gen = lambda: GCN2Conv(hidden_channels, alpha=0.5, add_self_loops=False)
-        super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_weights, edge_orientation)
+        super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_orientation, edge_weights)
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
         return relu(layer(x, x_0, edge_index, edge_weights))
@@ -99,7 +100,7 @@ class GCNII(BaseModel):
 class GRAFFNN(BaseModel):
     def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, step_size, edge_orientation, edge_weights):
         layer_gen = lambda: GRAFFConv(channels=hidden_channels, step_size=step_size, add_self_loops=False)
-        super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_weights, edge_orientation)
+        super().__init__(in_channels, hidden_channels, num_hidden, param_sharing, layer_gen, edge_orientation, edge_weights)
 
     def apply_layer(self, layer, x, x_0, edge_index, edge_weights):
-        return layer(x, x_0, edge_index, edge_weights)  # GRAFFConv already includes non-linearity
+        return layer(x, edge_index, edge_weights)  # GRAFFConv already includes non-linearity
