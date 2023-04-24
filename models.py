@@ -8,7 +8,6 @@ from torch_geometric.nn import GCNConv, GCN2Conv, Linear
 from torch_geometric.utils import add_self_loops
 
 
-# functionality: encoder/decoder, evolution tracking, IPU loss return
 class BaseModel(Module, ABC):
     def __init__(self, in_channels, hidden_channels, num_hidden, param_sharing, layerfun, edge_orientation, edge_weights):
         super().__init__()
